@@ -38,9 +38,22 @@ fn setup(state: *State) !void {
     ));
 }
 
+fn reset(state: *State) !void {
+    state.world.bodies.clearRetainingCapacity();
+    try setup(state);
+}
+
 fn input(state: *State) !void {
     if (rl.windowShouldClose() or rl.isKeyDown(.q)) {
         state.running = false;
+    }
+
+    if (rl.isKeyPressed(.r)) {
+        try reset(state);
+    }
+
+    if (rl.isKeyPressed(.p)) {
+        state.physics_enabled = !state.physics_enabled;
     }
 
     if (rl.isMouseButtonPressed(.left)) {
@@ -54,7 +67,9 @@ fn input(state: *State) !void {
 }
 
 fn update(state: *State, dt: f32) !void {
-    try state.world.update(dt);
+    if (state.physics_enabled) {
+        try state.world.update(dt);
+    }
 }
 
 fn render(state: *State) void {
@@ -126,11 +141,13 @@ const State = struct {
     const Self = @This();
 
     running: bool,
+    physics_enabled: bool,
     world: phiz.World,
 
     pub fn init(allocator: std.mem.Allocator) Self {
         return Self{
             .running = true,
+            .physics_enabled = true,
             .world = phiz.World.init(allocator, null),
         };
     }
