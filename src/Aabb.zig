@@ -40,6 +40,26 @@ pub fn getCenter(self: Self) m.Vec2 {
     return self.min.add(self.getHalfSize());
 }
 
+/// Calculates the minimum translation vector (MTV) to resolve overlap.
+/// Returns the MTV needed to separate `self` from `other`.
+/// The MTV points from `other` towards `self`.
+pub fn getMtv(self: Self, other: Self) ?m.Vec2 {
+    if (!self.intersects(other)) return null;
+
+    const overlap_x = @min(self.max.x(), other.max.x()) - @max(self.min.x(), other.min.x());
+    const overlap_y = @min(self.max.y(), other.max.y()) - @max(self.min.y(), other.min.y());
+
+    if (overlap_x < overlap_y) {
+        // Resolve horizontally
+        const direction: f32 = if (self.getCenter().x() < other.getCenter().x()) -1 else 1;
+        return m.Vec2.new(overlap_x * direction, 0);
+    } else {
+        // Resolve vertically
+        const direction: f32 = if (self.getCenter().y() < other.getCenter().y()) -1 else 1;
+        return m.Vec2.new(0, overlap_y * direction);
+    }
+}
+
 //
 // Tests
 //
