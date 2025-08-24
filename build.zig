@@ -14,7 +14,11 @@ pub fn build(b: *std.Build) void {
     const zalgebra_mod = zalgebra_dep.module("zalgebra");
     // Raylib: Graphics library.
     // This is only used for the example.
-    const raylib_dep = b.dependency("raylib_zig", options);
+    const raylib_dep = b.dependency("raylib_zig", .{
+        .target = target,
+        .optimize = optimize,
+        .linux_display_backend = .X11,
+    });
     const raylib_mod = raylib_dep.module("raylib");
     const raylib_lib = raylib_dep.artifact("raylib");
 

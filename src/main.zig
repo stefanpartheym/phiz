@@ -8,7 +8,8 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    rl.initWindow(800, 600, "phiz-example");
+    rl.setTargetFPS(60);
+    rl.setConfigFlags(.{ .window_highdpi = true });
     defer rl.closeWindow();
 
     var state = State.init(allocator);
