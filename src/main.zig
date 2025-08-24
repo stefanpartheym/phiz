@@ -3,6 +3,8 @@ const rl = @import("raylib");
 const phiz = @import("phiz");
 const m = phiz.m;
 
+const display_size = m.Vec2_i32.new(800, 600);
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -10,10 +12,12 @@ pub fn main() !void {
 
     rl.setTargetFPS(60);
     rl.setConfigFlags(.{ .window_highdpi = true });
+    rl.initWindow(display_size.x(), display_size.y(), "phiz-example");
     defer rl.closeWindow();
 
     var state = State.init(allocator);
     defer state.deinit();
+    try setup(&state);
 
     while (state.running) {
         const dt = rl.getFrameTime();
@@ -21,6 +25,17 @@ pub fn main() !void {
         try update(&state, dt);
         render(&state);
     }
+}
+
+fn setup(state: *State) !void {
+    const display_size_f32 = display_size.cast(f32);
+    const collider_size = 20;
+    // Add a static ground body.
+    _ = try state.world.addBody(phiz.Body.new(
+        .static,
+        m.Vec2.new(0, display_size_f32.y() - collider_size),
+        m.Vec2.new(display_size_f32.x(), collider_size),
+    ));
 }
 
 fn input(state: *State) !void {
@@ -46,14 +61,46 @@ fn render(state: *State) void {
     rl.beginDrawing();
     rl.clearBackground(rl.Color.black);
     for (state.world.bodies.items) |body| {
-        rl.drawRectangleV(
-            rl.Vector2.init(body.position.x(), body.position.y()),
-            rl.Vector2.init(body.size.x(), body.size.y()),
-            rl.Color.green,
-        );
+        renderBody(body);
+    }
+    for (state.world.bodies.items) |body| {
+        renderBodyDebug(body);
     }
     renderHud(state);
     rl.endDrawing();
+}
+
+fn renderBody(body: phiz.Body) void {
+    rl.drawRectangleV(
+        rl.Vector2.init(body.position.x(), body.position.y()),
+        rl.Vector2.init(body.size.x(), body.size.y()),
+        rl.Color.gray,
+    );
+}
+
+fn renderBodyDebug(body: phiz.Body) void {
+    const aabb = body.getAabb();
+    const aabb_pos = aabb.min;
+    const aabb_size = aabb.getSize();
+    rl.drawRectangleLinesEx(
+        rl.Rectangle.init(
+            aabb_pos.x(),
+            aabb_pos.y(),
+            aabb_size.x(),
+            aabb_size.y(),
+        ),
+        1,
+        rl.Color.red,
+    );
+    const body_center = body.getCenter();
+    const body_velocity = body.getCenter().add(body.velocity.scale(0.1));
+    if (body.isDynamic()) {
+        rl.drawLineV(
+            rl.Vector2.init(body_center.x(), body_center.y()),
+            rl.Vector2.init(body_velocity.x(), body_velocity.y()),
+            rl.Color.red,
+        );
+    }
 }
 
 fn renderHud(state: *State) void {
