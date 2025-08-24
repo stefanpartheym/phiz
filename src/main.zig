@@ -36,6 +36,13 @@ fn setup(state: *State) !void {
         m.Vec2.new(0, display_size_f32.y() - collider_size),
         m.Vec2.new(display_size_f32.x(), collider_size),
     ));
+
+    // Add a thin platform.
+    _ = try state.world.addBody(phiz.Body.new(
+        .static,
+        m.Vec2.new(50, 300),
+        m.Vec2.new(200, collider_size / 2),
+    ));
 }
 
 fn reset(state: *State) !void {
