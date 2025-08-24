@@ -16,9 +16,11 @@ velocity: m.Vec2,
 acceleration: m.Vec2,
 mass: f32,
 inv_mass: f32,
+terminal_velocity: f32,
 
 pub fn new(body_type: BodyType, position: m.Vec2, size: m.Vec2) Self {
     const default_mass = 1;
+    const default_terminal_velocity = 1000;
     return Self{
         .type = body_type,
         .position = position,
@@ -32,6 +34,10 @@ pub fn new(body_type: BodyType, position: m.Vec2, size: m.Vec2) Self {
         .inv_mass = switch (body_type) {
             .static => 0,
             .dynamic => 1 / default_mass,
+        },
+        .terminal_velocity = switch (body_type) {
+            .static => 0,
+            .dynamic => default_terminal_velocity,
         },
     };
 }
@@ -74,6 +80,12 @@ pub fn applyImpulse(self: *Self, impulse: m.Vec2) void {
 pub fn accelerate(self: *Self, dt: f32) void {
     if (self.isStatic()) return;
     self.velocity = self.velocity.add(self.acceleration.scale(dt));
+
+    // Clamp to terminal velocity
+    const speed = self.velocity.length();
+    if (speed > self.terminal_velocity) {
+        self.velocity = self.velocity.norm().scale(self.terminal_velocity);
+    }
 }
 
 /// x += v * dt
