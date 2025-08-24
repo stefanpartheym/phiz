@@ -1,5 +1,6 @@
 //! By convention, root.zig is the root source file when making a library.
 const std = @import("std");
+const m = @import("m");
 
 pub fn bufferedPrint() !void {
     // Stdout is for the actual output of your application, for example if you
@@ -14,10 +15,10 @@ pub fn bufferedPrint() !void {
     try stdout.flush(); // Don't forget to flush!
 }
 
-pub fn add(a: i32, b: i32) i32 {
-    return a + b;
+pub fn add(a: m.Vec2, b: m.Vec2) m.Vec2 {
+    return a.add(b);
 }
 
 test "basic add functionality" {
-    try std.testing.expect(add(3, 7) == 10);
+    try std.testing.expect(add(m.Vec2.new(1, 2), m.Vec2.new(3, 4)).eql(m.Vec2.new(4, 6)));
 }

@@ -5,13 +5,31 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     //
-    // Module
+    // Dependencies
     //
 
+    // Zalgebra: Linear algebra library for games and real-time graphics.
+    const zalgebra_dep = b.dependency("zalgebra", .{ .target = target, .optimize = optimize });
+    const zalgebra_mod = zalgebra_dep.module("zalgebra");
+
+    //
+    // Modules
+    //
+
+    // Internal math module (wraps zalgebra)
+    const math_mod = b.createModule(.{
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = b.path("src/math/mod.zig"),
+    });
+    math_mod.addImport("zalgebra", zalgebra_mod);
+
+    // Public library module
     const mod = b.addModule("phiz", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
     });
+    mod.addImport("m", math_mod);
 
     //
     // Executable
