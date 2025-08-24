@@ -108,6 +108,11 @@ fn renderBodyDebug(body: phiz.Body) void {
         rl.Color.red,
     );
     const body_center = body.getCenter();
+    rl.drawCircleV(
+        rl.Vector2.init(body_center.x(), body_center.y()),
+        2,
+        rl.Color.red,
+    );
     const body_velocity = body.getCenter().add(body.velocity.scale(0.1));
     if (body.isDynamic()) {
         rl.drawLineV(
