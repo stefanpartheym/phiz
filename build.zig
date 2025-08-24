@@ -11,6 +11,11 @@ pub fn build(b: *std.Build) void {
     // Zalgebra: Linear algebra library for games and real-time graphics.
     const zalgebra_dep = b.dependency("zalgebra", .{ .target = target, .optimize = optimize });
     const zalgebra_mod = zalgebra_dep.module("zalgebra");
+    // Raylib: Graphics library.
+    // This is only used for the example.
+    const raylib_dep = b.dependency("raylib_zig", .{ .target = target, .optimize = optimize });
+    const raylib_mod = raylib_dep.module("raylib");
+    const raylib_lib = raylib_dep.artifact("raylib");
 
     //
     // Modules
@@ -35,17 +40,19 @@ pub fn build(b: *std.Build) void {
     // Executable
     //
 
-    const exe = b.addExecutable(.{
-        .name = "exe",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "phiz", .module = mod },
-            },
-        }),
+    const exe_mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "phiz", .module = mod },
+        },
+        // Link against libc for raylib.
+        .link_libc = true,
     });
+    exe_mod.addImport("raylib", raylib_mod);
+    exe_mod.linkLibrary(raylib_lib);
+    const exe = b.addExecutable(.{ .name = "exe", .root_module = exe_mod });
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
