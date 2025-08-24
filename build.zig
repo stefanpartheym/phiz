@@ -67,9 +67,14 @@ pub fn build(b: *std.Build) void {
     // Unit tests
     //
 
-    const mod_tests = b.addTest(.{
-        .root_module = mod,
+    const test_mod = b.createModule(.{
+        .root_source_file = b.path("src/test.zig"),
+        .target = target,
+        .optimize = optimize,
     });
+    test_mod.addImport("m", math_mod);
+
+    const mod_tests = b.addTest(.{ .root_module = test_mod });
     const run_mod_tests = b.addRunArtifact(mod_tests);
     const install_mod_tests = b.addInstallArtifact(mod_tests, .{ .dest_sub_path = "test" });
 
