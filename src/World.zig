@@ -9,7 +9,7 @@ const Self = @This();
 /// Multiplying by 100 to get make it feel realistic.
 pub const DEFAULT_GRAVITY = m.Vec2.new(0, 9.81 * 100);
 
-pub const BodyHandle = struct {
+pub const BodyId = struct {
     index: usize,
     pub fn new(index: usize) @This() {
         return @This(){ .index = index };
@@ -52,11 +52,11 @@ pub fn update(self: *Self, dt: f32) !void {
     }
 }
 
-pub fn addBody(self: *Self, body: Body) !BodyHandle {
+pub fn addBody(self: *Self, body: Body) !BodyId {
     try self.bodies.append(self.allocator, body);
-    return BodyHandle.new(self.bodies.items.len - 1);
+    return BodyId.new(self.bodies.items.len - 1);
 }
 
-pub fn getBody(self: *const Self, handle: BodyHandle) *Body {
+pub fn getBody(self: *const Self, handle: BodyId) *Body {
     return &self.bodies.items[handle.index];
 }
