@@ -165,3 +165,120 @@ fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) void {
     body_a.position = body_a.position.add(half_mtv);
     body_b.position = body_b.position.sub(half_mtv);
 }
+
+//
+// Tests
+//
+
+test "World: Should detect collision between overlapping dynamic bodies" {
+    var world = Self.init(std.testing.allocator, null);
+    defer world.deinit();
+
+    const body1 = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
+    const body2 = Body.new(.dynamic, m.Vec2.new(1, 1), m.Vec2.new(2, 2));
+
+    _ = try world.addBody(body1);
+    _ = try world.addBody(body2);
+
+    try world.detectCollisions();
+    try std.testing.expect(world.collisions.items.len == 1);
+}
+
+test "World: Should not detect collision between non-overlapping bodies" {
+    var world = Self.init(std.testing.allocator, null);
+    defer world.deinit();
+
+    const body1 = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
+    const body2 = Body.new(.dynamic, m.Vec2.new(3, 3), m.Vec2.new(2, 2));
+
+    _ = try world.addBody(body1);
+    _ = try world.addBody(body2);
+
+    try world.detectCollisions();
+    try std.testing.expect(world.collisions.items.len == 0);
+}
+
+test "World: Should skip static vs static collisions" {
+    var world = Self.init(std.testing.allocator, null);
+    defer world.deinit();
+
+    const body1 = Body.new(.static, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
+    const body2 = Body.new(.static, m.Vec2.new(1, 1), m.Vec2.new(2, 2));
+
+    _ = try world.addBody(body1);
+    _ = try world.addBody(body2);
+
+    try world.detectCollisions();
+    try std.testing.expect(world.collisions.items.len == 0);
+}
+
+test "World: Should classify collision types correctly" {
+    var world = Self.init(std.testing.allocator, null);
+    defer world.deinit();
+
+    const dynamic = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
+    const static = Body.new(.static, m.Vec2.new(1, 1), m.Vec2.new(2, 2));
+
+    _ = try world.addBody(dynamic);
+    _ = try world.addBody(static);
+
+    try world.detectCollisions();
+
+    try std.testing.expect(world.collisions.items.len == 1);
+    const collision = world.collisions.items[0];
+    try std.testing.expect(collision.getType(&world) == .dynamic_static);
+}
+
+test "World: Should resolve dynamic vs static collision" {
+    var world = Self.init(std.testing.allocator, null);
+    defer world.deinit();
+
+    const dynamic = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
+    const static = Body.new(.static, m.Vec2.new(1, 1), m.Vec2.new(2, 2));
+
+    _ = try world.addBody(dynamic);
+    _ = try world.addBody(static);
+
+    const original_pos = dynamic.position;
+
+    try world.detectCollisions();
+    world.resolveCollisions();
+
+    const resolved_body = world.getBody(BodyId.new(0));
+    try std.testing.expect(!resolved_body.position.eql(original_pos));
+}
+
+test "World: Should resolve dynamic vs dynamic collision" {
+    var world = Self.init(std.testing.allocator, null);
+    defer world.deinit();
+
+    const body1 = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
+    const body2 = Body.new(.dynamic, m.Vec2.new(1, 1), m.Vec2.new(2, 2));
+
+    _ = try world.addBody(body1);
+    _ = try world.addBody(body2);
+
+    const original_pos1 = body1.position;
+    const original_pos2 = body2.position;
+
+    try world.detectCollisions();
+    world.resolveCollisions();
+
+    const resolved_body1 = world.getBody(BodyId.new(0));
+    const resolved_body2 = world.getBody(BodyId.new(1));
+
+    // Both bodies should have moved
+    try std.testing.expect(!resolved_body1.position.eql(original_pos1));
+    try std.testing.expect(!resolved_body2.position.eql(original_pos2));
+}
+
+test "Body: Should clamp velocity to terminal velocity" {
+    var body = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(1, 1));
+
+    // Set a very high acceleration
+    body.acceleration = m.Vec2.new(0, 10000);
+    body.accelerate(1.0);
+
+    const speed = body.velocity.length();
+    try std.testing.expect(speed <= body.terminal_velocity);
+}

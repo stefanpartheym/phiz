@@ -114,3 +114,62 @@ test "intersects: Should return false for AABBs not overlapping" {
     const b = Aabb.new(m.Vec2.new(2, 2), m.Vec2.new(3, 3));
     try std.testing.expect(!a.intersects(b));
 }
+
+test "getMtv: Should return null for non-overlapping AABBs" {
+    const a = Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(2, 2));
+    const b = Aabb.new(m.Vec2.new(3, 3), m.Vec2.new(4, 4));
+    try std.testing.expect(a.getMtv(b) == null);
+}
+
+test "getMtv: Should resolve horizontally when horizontal overlap is smaller" {
+    const a = Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(3, 4));
+    const b = Aabb.new(m.Vec2.new(2, 0.5), m.Vec2.new(5, 3.5));
+    
+    if (a.getMtv(b)) |mtv| {
+        try std.testing.expect(mtv.y() == 0); // Should be horizontal resolution
+        try std.testing.expect(mtv.x() < 0); // Should push a to the left
+        try std.testing.expectApproxEqAbs(mtv.x(), -1, 0.001); // Overlap is 1 unit
+    } else {
+        try std.testing.expect(false); // Should not be null
+    }
+}
+
+test "getMtv: Should resolve vertically when vertical overlap is smaller" {
+    const a = Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(4, 3));
+    const b = Aabb.new(m.Vec2.new(0.5, 2), m.Vec2.new(3.5, 5));
+    
+    if (a.getMtv(b)) |mtv| {
+        try std.testing.expect(mtv.x() == 0); // Should be vertical resolution
+        try std.testing.expect(mtv.y() < 0); // Should push a down
+        try std.testing.expectApproxEqAbs(mtv.y(), -1, 0.001); // Overlap is 1 unit
+    } else {
+        try std.testing.expect(false); // Should not be null
+    }
+}
+
+test "getMtv: Should resolve in correct direction based on centers" {
+    // A is to the left of B
+    const a = Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(3, 2));
+    const b = Aabb.new(m.Vec2.new(2, 0), m.Vec2.new(4, 2));
+    
+    if (a.getMtv(b)) |mtv| {
+        try std.testing.expect(mtv.x() < 0); // Should push A away from B (left)
+        try std.testing.expect(mtv.y() == 0);
+        try std.testing.expectApproxEqAbs(mtv.x(), -1, 0.001);
+    } else {
+        try std.testing.expect(false);
+    }
+}
+
+test "getMtv: Should handle perfect center alignment" {
+    const a = Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(2, 2));
+    const b = Aabb.new(m.Vec2.new(1, 1), m.Vec2.new(3, 3));
+    
+    if (a.getMtv(b)) |mtv| {
+        // When overlaps are equal, it should pick vertical (overlap_x < overlap_y is false)
+        try std.testing.expect(mtv.x() == 0);
+        try std.testing.expectApproxEqAbs(@abs(mtv.y()), 1, 0.001);
+    } else {
+        try std.testing.expect(false);
+    }
+}
