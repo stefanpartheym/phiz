@@ -33,6 +33,8 @@ const CollisionType = enum {
 ///   g = 9.81 m/s²
 /// Multiplying by 100 to get make it feel realistic.
 pub const DEFAULT_GRAVITY = m.Vec2.new(0, 9.81 * 100);
+/// Default terminal velocity.
+pub const DEFAULT_TERMINAL_VELOCITY: f32 = 1000;
 
 pub const BodyId = struct {
     index: usize,
@@ -43,6 +45,7 @@ pub const BodyId = struct {
 
 allocator: std.mem.Allocator,
 gravity: m.Vec2,
+terminal_velocity: f32,
 sub_steps: usize,
 bodies: std.ArrayList(Body),
 collisions: std.ArrayList(Collision),
@@ -51,6 +54,7 @@ pub fn init(allocator: std.mem.Allocator, gravity: ?m.Vec2) Self {
     return Self{
         .allocator = allocator,
         .gravity = gravity orelse DEFAULT_GRAVITY,
+        .terminal_velocity = DEFAULT_TERMINAL_VELOCITY,
         .sub_steps = 8,
         .bodies = std.ArrayList(Body){},
         .collisions = std.ArrayList(Collision){},
@@ -89,9 +93,12 @@ pub fn update(self: *Self, dt: f32) !void {
         }
     }
 
-    // Reset accelerations.
+    // Reset accelerations and clamp velocities.
     for (self.bodies.items) |*body| {
         body.acceleration = m.Vec2.zero();
+        if (body.velocity.length() > self.terminal_velocity) {
+            body.velocity = body.velocity.norm().scale(self.terminal_velocity);
+        }
     }
 }
 
@@ -307,13 +314,15 @@ test "World: Should resolve dynamic vs dynamic collision" {
     try std.testing.expect(!resolved_body2.position.eql(original_pos2));
 }
 
-test "Body: Should clamp velocity to terminal velocity" {
-    var body = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(1, 1));
+test "World: Should clamp velocity to terminal velocity" {
+    var world = Self.init(std.testing.allocator, null);
+    defer world.deinit();
 
+    const id = try world.addBody(Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(1, 1)));
+    var body = world.getBody(id);
     // Set a very high acceleration
-    body.acceleration = m.Vec2.new(0, 10000);
-    body.accelerate(1.0);
+    body.acceleration = m.Vec2.new(10000, 0);
+    try world.update(1);
 
-    const speed = body.velocity.length();
-    try std.testing.expect(speed <= body.terminal_velocity);
+    try std.testing.expect(body.velocity.x() <= world.terminal_velocity);
 }
