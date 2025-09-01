@@ -85,8 +85,8 @@ fn render(state: *State) void {
     for (state.world.bodies.items) |body| {
         renderBody(body);
     }
-    for (state.world.bodies.items) |body| {
-        renderBodyDebug(body);
+    for (state.world.bodies.items, 0..) |body, index| {
+        renderBodyDebug(body, index);
     }
     renderHud(state);
     rl.endDrawing();
@@ -96,11 +96,11 @@ fn renderBody(body: phiz.Body) void {
     rl.drawRectangleV(
         rl.Vector2.init(body.position.x(), body.position.y()),
         rl.Vector2.init(body.size.x(), body.size.y()),
-        rl.Color.gray,
+        if (body.isDynamic()) rl.Color.blue else rl.Color.gray,
     );
 }
 
-fn renderBodyDebug(body: phiz.Body) void {
+fn renderBodyDebug(body: phiz.Body, index: usize) void {
     const aabb = body.getAabb();
     const aabb_pos = aabb.min;
     const aabb_size = aabb.getSize();
@@ -128,6 +128,12 @@ fn renderBodyDebug(body: phiz.Body) void {
             rl.Color.red,
         );
     }
+
+    // Body index
+    var text_buf: [8]u8 = undefined;
+    const text = std.fmt.bufPrintZ(&text_buf, "{d}", .{index}) catch unreachable;
+    const text_pos = body.position.add(m.Vec2.new(2, 1)).cast(i32);
+    rl.drawText(text, text_pos.x(), text_pos.y(), 6, rl.Color.ray_white);
 }
 
 fn renderHud(state: *State) void {
