@@ -8,6 +8,7 @@ const Collision = struct {
     body_a: BodyId,
     body_b: BodyId,
     mtv: m.Vec2,
+    normal: m.Vec2,
 
     pub fn getType(self: @This(), world: *const Self) CollisionType {
         const body_a = world.getBody(self.body_a);
@@ -50,7 +51,7 @@ pub fn init(allocator: std.mem.Allocator, gravity: ?m.Vec2) Self {
     return Self{
         .allocator = allocator,
         .gravity = gravity orelse DEFAULT_GRAVITY,
-        .sub_steps = 3,
+        .sub_steps = 8,
         .bodies = std.ArrayList(Body){},
         .collisions = std.ArrayList(Collision){},
     };
@@ -68,16 +69,25 @@ pub fn update(self: *Self, dt: f32) !void {
         body.accelerate(dt);
     }
 
-    // Integrate all bodies.
-    for (self.bodies.items) |*body| {
-        body.integrate(dt);
+    for (0..self.sub_steps) |_| {
+        const step_dt = dt / @as(f32, @floatFromInt(self.sub_steps));
+
+        // Integrate bodies.
+        for (self.bodies.items) |*body| {
+            body.integrate(step_dt);
+        }
+
+        // Detect and resolve collisions.
+        try self.detectCollisions();
+        self.resolveCollisions();
+
+        // Account for floating point inaccuracies.
+        for (self.bodies.items) |*body| {
+            if (body.velocity.length() < 0.1) {
+                body.velocity = m.Vec2.zero();
+            }
+        }
     }
-
-    // Phase 1: Detect all collisions
-    try self.detectCollisions();
-
-    // Phase 2: Resolve collisions (dynamic vs static first, then dynamic vs dynamic)
-    self.resolveCollisions();
 
     // Reset accelerations.
     for (self.bodies.items) |*body| {
@@ -115,6 +125,7 @@ fn detectCollisions(self: *Self) !void {
                     .body_a = BodyId.new(i),
                     .body_b = BodyId.new(j),
                     .mtv = mtv,
+                    .normal = mtv.norm(),
                 };
                 try self.collisions.append(self.allocator, collision);
             }
@@ -151,8 +162,16 @@ fn resolveDynamicStaticCollision(self: *Self, collision: Collision) void {
     // Determine which body is dynamic and move it out of collision
     if (body_a.isDynamic()) {
         body_a.position = body_a.position.add(collision.mtv);
+        const velocity_along_normal = body_a.velocity.dot(collision.normal);
+        if (velocity_along_normal < 0) {
+            body_a.velocity = body_a.velocity.sub(collision.normal.scale(velocity_along_normal));
+        }
     } else {
         body_b.position = body_b.position.add(collision.mtv.scale(-1));
+        const velocity_along_normal = body_b.velocity.dot(collision.normal.scale(-1));
+        if (velocity_along_normal < 0) {
+            body_b.velocity = body_b.velocity.sub(collision.normal.scale(-velocity_along_normal));
+        }
     }
 }
 
@@ -160,10 +179,26 @@ fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) void {
     const body_a = self.getBody(collision.body_a);
     const body_b = self.getBody(collision.body_b);
 
-    // Split the MTV equally between both bodies
+    // Position correction: Split the MTV equally between both bodies.
     const half_mtv = collision.mtv.scale(0.5);
     body_a.position = body_a.position.add(half_mtv);
     body_b.position = body_b.position.sub(half_mtv);
+
+    // Velocity correction: Calculate relative velocity along collision normal.
+    const relative_velocity = body_a.velocity.sub(body_b.velocity);
+    const velocity_along_normal = relative_velocity.dot(collision.normal);
+
+    // Only resolve velocity if bodies are moving towards each other.
+    if (velocity_along_normal < 0) {
+        // Calculate impulse magnitude (simplified elastic collision).
+        const total_inv_mass = body_a.inv_mass + body_b.inv_mass;
+        const impulse_magnitude = -velocity_along_normal / total_inv_mass;
+        const impulse = collision.normal.scale(impulse_magnitude);
+
+        // Apply impulse to both bodies.
+        body_a.velocity = body_a.velocity.add(impulse.scale(body_a.inv_mass));
+        body_b.velocity = body_b.velocity.sub(impulse.scale(body_b.inv_mass));
+    }
 }
 
 //
