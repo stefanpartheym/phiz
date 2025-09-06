@@ -20,7 +20,10 @@ pub fn main() !void {
     try setup(&state);
 
     while (state.running) {
-        const dt = rl.getFrameTime();
+        const dt = if (state.debugger.frame_stepping_enabled)
+            state.debugger.consumeTime()
+        else
+            rl.getFrameTime();
         try input(&state);
         try update(&state, dt);
         render(&state);
@@ -63,6 +66,10 @@ fn input(state: *State) !void {
         state.physics_enabled = !state.physics_enabled;
     }
 
+    if (rl.isKeyPressed(.f1)) {
+        state.debugger.frame_stepping_enabled = !state.debugger.frame_stepping_enabled;
+    }
+
     if (rl.isMouseButtonPressed(.left)) {
         const mouse_pos = rl.getMousePosition();
         _ = try state.world.addBody(phiz.Body.new(
@@ -70,6 +77,10 @@ fn input(state: *State) !void {
             m.Vec2.new(mouse_pos.x, mouse_pos.y),
             m.Vec2.new(25, 25),
         ));
+    }
+
+    if (rl.isKeyPressed(.enter)) {
+        state.debugger.produceTime(1.0 / 60.0);
     }
 }
 
@@ -146,25 +157,60 @@ fn renderHud(state: *State) void {
         .{state.world.bodies.items.len},
     ) catch unreachable;
     rl.drawFPS(offset, offset);
+    var line: i32 = 1;
     rl.drawText(
         bodies_text,
         offset,
-        font_size + offset * 2,
+        font_size * line + offset * (line + 1),
         font_size,
         rl.Color.ray_white,
     );
+    line += 1;
+    if (state.debugger.frame_stepping_enabled) {
+        rl.drawText(
+            "Frame stepping",
+            offset,
+            font_size * line + offset * (line + 1),
+            font_size,
+            rl.Color.ray_white,
+        );
+    }
 }
 
 const State = struct {
+    const Debugger = struct {
+        pub const init = @This(){
+            .frame_stepping_enabled = false,
+            .frame_dt = 0,
+        };
+
+        frame_stepping_enabled: bool,
+        frame_dt: f32,
+
+        /// Produce time for a single frame.
+        pub fn produceTime(self: *@This(), dt: f32) void {
+            self.frame_dt = dt;
+        }
+
+        /// Consume availble time for current frame.
+        pub fn consumeTime(self: *@This()) f32 {
+            const result = self.frame_dt;
+            self.frame_dt = 0;
+            return result;
+        }
+    };
+
     const Self = @This();
 
     running: bool,
+    debugger: Debugger,
     physics_enabled: bool,
     world: phiz.World,
 
     pub fn init(allocator: std.mem.Allocator) Self {
         return Self{
             .running = true,
+            .debugger = Debugger.init,
             .physics_enabled = true,
             .world = phiz.World.init(allocator, null),
         };
