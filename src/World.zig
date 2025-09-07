@@ -27,7 +27,7 @@ const CollisionType = enum {
 
 /// Default gravity is more or less earth's gravity:
 ///   g = 9.81 m/s²
-/// Multiplying by 100 to get make it feel realistic.
+/// Multiplying by 100 to make it feel realistic.
 pub const DEFAULT_GRAVITY = m.Vec2.new(0, 9.81 * 100);
 /// Default terminal velocity.
 pub const DEFAULT_TERMINAL_VELOCITY: f32 = 1000;
@@ -362,7 +362,7 @@ test "World.update: Should clamp velocity to terminal velocity" {
 
     const id = try world.addBody(Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(1, 1)));
     var body = world.getBody(id);
-    // Set a very high acceleration.
+    // Set a very high acceleration to test clamping.
     body.acceleration = m.Vec2.new(-10000, 10000);
     try world.update(1);
 

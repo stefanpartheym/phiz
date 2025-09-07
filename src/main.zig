@@ -226,7 +226,7 @@ const State = struct {
             self.frame_dt = dt;
         }
 
-        /// Consume availble time for current frame.
+        /// Consume available time for current frame.
         pub fn consumeTime(self: *@This()) f32 {
             const result = self.frame_dt;
             self.frame_dt = 0;
