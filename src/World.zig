@@ -186,6 +186,7 @@ fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) void {
     const body_b = self.getBody(collision.body_b);
 
     // Position correction: Split the MTV equally between both bodies.
+    // Assuming the MTV points from body_b to body_a.
     const half_mtv = collision.mtv.scale(0.5);
     body_a.position = body_a.position.add(half_mtv);
     body_b.position = body_b.position.sub(half_mtv);
@@ -196,14 +197,13 @@ fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) void {
 
     // Only resolve velocity if bodies are moving towards each other.
     if (velocity_along_normal < 0) {
-        // Calculate impulse magnitude (simplified elastic collision).
-        const total_inv_mass = body_a.inv_mass + body_b.inv_mass;
-        const impulse_magnitude = -velocity_along_normal / total_inv_mass;
-        const impulse = collision.normal.scale(impulse_magnitude);
+        // Remove velocity components along collision normal for fully inelastic collisions.
+        const velocity_a_along_normal = body_a.velocity.dot(collision.normal);
+        const velocity_b_along_normal = body_b.velocity.dot(collision.normal);
 
-        // Apply impulse to both bodies.
-        body_a.velocity = body_a.velocity.add(impulse.scale(body_a.inv_mass));
-        body_b.velocity = body_b.velocity.sub(impulse.scale(body_b.inv_mass));
+        // Remove normal velocity components from both bodies
+        body_a.velocity = body_a.velocity.sub(collision.normal.scale(velocity_a_along_normal));
+        body_b.velocity = body_b.velocity.sub(collision.normal.scale(velocity_b_along_normal));
     }
 }
 
