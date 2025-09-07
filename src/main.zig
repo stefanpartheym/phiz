@@ -33,6 +33,13 @@ pub fn main() !void {
 fn setup(state: *State) !void {
     const display_size_f32 = display_size.cast(f32);
     const collider_size = 20;
+    // Add a moving body.
+    _ = try state.world.addBody(phiz.Body.new(
+        .dynamic,
+        m.Vec2.new(display_size_f32.x() - 100, 100),
+        m.Vec2.new(50, 50),
+    ));
+
     // Add a static ground body.
     _ = try state.world.addBody(phiz.Body.new(
         .static,
@@ -111,6 +118,8 @@ fn input(state: *State) !void {
 
 fn update(state: *State, dt: f32) !void {
     if (state.physics_enabled) {
+        const moving_body = state.world.getBody(phiz.BodyId.new(0));
+        moving_body.applyForce(m.Vec2.new(-100, 0));
         try state.world.update(dt);
     }
 }
