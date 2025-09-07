@@ -46,6 +46,13 @@ fn setup(state: *State) !void {
         m.Vec2.new(50, 300),
         m.Vec2.new(200, collider_size / 2),
     ));
+
+    // Add player.
+    state.player = try state.world.addBody(phiz.Body.new(
+        .dynamic,
+        m.Vec2.new(100, 100),
+        m.Vec2.new(25, 50),
+    ));
 }
 
 fn reset(state: *State) !void {
@@ -81,6 +88,24 @@ fn input(state: *State) !void {
 
     if (rl.isKeyPressed(.enter)) {
         state.debugger.produceTime(1.0 / 60.0);
+    }
+
+    const movement = if (rl.isKeyDown(.h) or rl.isKeyDown(.left))
+        m.Vec2.left()
+    else if (rl.isKeyDown(.j) or rl.isKeyDown(.down))
+        m.Vec2.down().negate()
+    else if (rl.isKeyDown(.k) or rl.isKeyDown(.up))
+        m.Vec2.up().negate()
+    else if (rl.isKeyDown(.l) or rl.isKeyDown(.right))
+        m.Vec2.right()
+    else
+        m.Vec2.zero();
+
+    const player = state.world.getBody(state.player);
+    player.applyForce(movement.scale(300));
+
+    if (rl.isKeyPressed(.space)) {
+        player.applyImpulse(m.Vec2.new(0, -400));
     }
 }
 
@@ -206,6 +231,7 @@ const State = struct {
     debugger: Debugger,
     physics_enabled: bool,
     world: phiz.World,
+    player: phiz.BodyId,
 
     pub fn init(allocator: std.mem.Allocator) Self {
         return Self{
@@ -213,6 +239,7 @@ const State = struct {
             .debugger = Debugger.init,
             .physics_enabled = true,
             .world = phiz.World.init(allocator, null),
+            .player = undefined,
         };
     }
 
