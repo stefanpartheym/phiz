@@ -14,6 +14,16 @@
     {
       "type": "lldb",
       "request": "launch",
+      "name": "Debug top-down example executable",
+      "preLaunchTask": "build-exe",
+      "program": "${workspaceFolder}/zig-out/bin/example-topdown",
+      "cwd": "${workspaceFolder}",
+      "stopOnEntry": false,
+      "args": []
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
       "name": "Debug test",
       "preLaunchTask": "build-test",
       "program": "${workspaceFolder}/zig-out/bin/test",

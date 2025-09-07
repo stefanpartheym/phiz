@@ -42,30 +42,28 @@ pub fn build(b: *std.Build) void {
     mod.addImport("m", math_mod);
 
     //
-    // Example: Platformer
+    // Examples
     //
 
-    const exe_mod = b.createModule(.{
-        .root_source_file = b.path("src/examples/platformer.zig"),
+    const example_platformer = Example{
+        .source = "src/examples/platformer.zig",
         .target = target,
         .optimize = optimize,
-        // Link against libc for raylib.
-        .link_libc = true,
-    });
-    exe_mod.addImport("raylib", raylib_mod);
-    exe_mod.addImport("phiz", mod);
-    exe_mod.linkLibrary(raylib_lib);
+        .raylib_mod = raylib_mod,
+        .raylib_lib = raylib_lib,
+        .main_mod = mod,
+    };
+    example_platformer.add(b, "platformer");
 
-    const exe = b.addExecutable(.{ .name = "example-platformer", .root_module = exe_mod });
-    b.installArtifact(exe);
-
-    const run_cmd = b.addRunArtifact(exe);
-    const run_step = b.step("run-platformer", "Run the platformer example");
-    run_step.dependOn(&run_cmd.step);
-    run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
+    const example_topdown = Example{
+        .source = "src/examples/topdown.zig",
+        .target = target,
+        .optimize = optimize,
+        .raylib_mod = raylib_mod,
+        .raylib_lib = raylib_lib,
+        .main_mod = mod,
+    };
+    example_topdown.add(b, "topdown");
 
     //
     // Unit tests
@@ -90,3 +88,36 @@ pub fn build(b: *std.Build) void {
     const install_test_step = b.step("install-test", "Install unit tests");
     install_test_step.dependOn(&install_mod_tests.step);
 }
+
+const Example = struct {
+    source: []const u8,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    raylib_mod: *std.Build.Module,
+    raylib_lib: *std.Build.Step.Compile,
+    main_mod: *std.Build.Module,
+
+    pub fn add(self: @This(), b: *std.Build, comptime name: []const u8) void {
+        const exe_mod = b.createModule(.{
+            .root_source_file = b.path(self.source),
+            .target = self.target,
+            .optimize = self.optimize,
+            // Link against libc for raylib.
+            .link_libc = true,
+        });
+        exe_mod.addImport("raylib", self.raylib_mod);
+        exe_mod.addImport("phiz", self.main_mod);
+        exe_mod.linkLibrary(self.raylib_lib);
+
+        const exe = b.addExecutable(.{ .name = "example-" ++ name, .root_module = exe_mod });
+        b.installArtifact(exe);
+
+        const run_cmd = b.addRunArtifact(exe);
+        const run_step = b.step("run-" ++ name, "Run the " ++ name ++ " example");
+        run_step.dependOn(&run_cmd.step);
+        run_cmd.step.dependOn(b.getInstallStep());
+        if (b.args) |args| {
+            run_cmd.addArgs(args);
+        }
+    }
+};

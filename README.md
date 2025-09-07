@@ -34,7 +34,10 @@ The list of features I'm planning to implement:
 
 ```sh
 zig build run-platformer
+```
 
+```sh
+zig build run-topdown
 ```
 
 ## Resources
