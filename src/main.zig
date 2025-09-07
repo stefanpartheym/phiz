@@ -40,11 +40,23 @@ fn setup(state: *State) !void {
         m.Vec2.new(50, 50),
     ));
 
-    // Add a static ground body.
+    // Ground
     _ = try state.world.addBody(phiz.Body.new(
         .static,
         m.Vec2.new(0, display_size_f32.y() - collider_size),
         m.Vec2.new(display_size_f32.x(), collider_size),
+    ));
+    // Left wall
+    _ = try state.world.addBody(phiz.Body.new(
+        .static,
+        m.Vec2.new(0, display_size_f32.y() / 2),
+        m.Vec2.new(collider_size, display_size_f32.y() / 2),
+    ));
+    // Right wall
+    _ = try state.world.addBody(phiz.Body.new(
+        .static,
+        m.Vec2.new(display_size_f32.x() - collider_size, display_size_f32.y() / 2),
+        m.Vec2.new(collider_size, display_size_f32.y() / 2),
     ));
 
     // Add a thin platform.
