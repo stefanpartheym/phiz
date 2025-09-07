@@ -4,9 +4,9 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Debug executable",
+      "name": "Debug platformer example executable",
       "preLaunchTask": "build-exe",
-      "program": "${workspaceFolder}/zig-out/bin/exe",
+      "program": "${workspaceFolder}/zig-out/bin/example-platformer",
       "cwd": "${workspaceFolder}",
       "stopOnEntry": false,
       "args": []

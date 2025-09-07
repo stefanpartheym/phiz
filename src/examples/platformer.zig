@@ -12,7 +12,7 @@ pub fn main() !void {
 
     rl.setTargetFPS(60);
     rl.setConfigFlags(.{ .window_highdpi = true });
-    rl.initWindow(display_size.x(), display_size.y(), "phiz-example");
+    rl.initWindow(display_size.x(), display_size.y(), "phiz example: platformer");
     defer rl.closeWindow();
 
     var state = State.init(allocator);

@@ -42,11 +42,11 @@ pub fn build(b: *std.Build) void {
     mod.addImport("m", math_mod);
 
     //
-    // Executable
+    // Example: Platformer
     //
 
     const exe_mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("src/examples/platformer.zig"),
         .target = target,
         .optimize = optimize,
         // Link against libc for raylib.
@@ -56,11 +56,11 @@ pub fn build(b: *std.Build) void {
     exe_mod.addImport("phiz", mod);
     exe_mod.linkLibrary(raylib_lib);
 
-    const exe = b.addExecutable(.{ .name = "exe", .root_module = exe_mod });
+    const exe = b.addExecutable(.{ .name = "example-platformer", .root_module = exe_mod });
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
-    const run_step = b.step("run", "Run the example");
+    const run_step = b.step("run-platformer", "Run the platformer example");
     run_step.dependOn(&run_cmd.step);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {

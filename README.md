@@ -28,6 +28,15 @@ The list of features I'm planning to implement:
 - [ ] Broad phase collision detection (via spatial partitioning, quadtrees, etc.)
 - [ ] Continuous collision detection for fast moving bodies
 
+## Examples
+
+2D platformer:
+
+```sh
+zig build run-platformer
+
+```
+
 ## Resources
 
 - [box2d.org](https://box2d.org/)
