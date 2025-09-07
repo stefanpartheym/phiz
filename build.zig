@@ -26,12 +26,15 @@ pub fn build(b: *std.Build) void {
     // Modules
     //
 
-    // Internal math module (wraps zalgebra)
-    const math_mod = b.createModule(.{
-        .target = target,
-        .optimize = optimize,
-        .root_source_file = b.path("src/math/mod.zig"),
-    });
+    // Public math module (wraps zalgebra)
+    const math_mod = b.addModule(
+        "math",
+        .{
+            .target = target,
+            .optimize = optimize,
+            .root_source_file = b.path("src/math/mod.zig"),
+        },
+    );
     math_mod.addImport("zalgebra", zalgebra_mod);
 
     // Public library module
