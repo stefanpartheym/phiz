@@ -5,22 +5,18 @@ const Body = @import("./Body.zig");
 const Self = @This();
 
 const Collision = struct {
+    type: CollisionType,
     body_a: BodyId,
     body_b: BodyId,
     mtv: m.Vec2,
     normal: m.Vec2,
 
-    pub fn getType(self: @This(), world: *const Self) CollisionType {
-        const body_a = world.getBody(self.body_a);
-        const body_b = world.getBody(self.body_b);
-
-        if ((body_a.isDynamic() and body_b.isStatic()) or
-            (body_a.isStatic() and body_b.isDynamic()))
-        {
+    pub fn determineType(body_a: *const Body, body_b: *const Body) CollisionType {
+        if (body_a.isStatic() or body_b.isStatic()) {
             return .dynamic_static;
+        } else {
+            return .dynamic_dynamic;
         }
-        if (body_a.isDynamic() and body_b.isDynamic()) return .dynamic_dynamic;
-        unreachable; // Should never have static vs static
     }
 };
 
@@ -129,6 +125,7 @@ fn detectCollisions(self: *Self) !void {
 
             if (aabb_a.getMtv(aabb_b)) |mtv| {
                 const collision = Collision{
+                    .type = Collision.determineType(body_a, body_b),
                     .body_a = BodyId.new(i),
                     .body_b = BodyId.new(j),
                     .mtv = mtv,
@@ -140,26 +137,28 @@ fn detectCollisions(self: *Self) !void {
     }
 }
 
-fn resolveCollisions(self: *Self) void {
-    // Sort collisions: dynamic vs static first, then dynamic vs dynamic
-    std.sort.insertion(Collision, self.collisions.items, self, collisionLessThan);
+fn sortCollisions(self: *Self) void {
+    const sortLessThan = struct {
+        /// Compare function to sort collisions by type (`dynamic_static` first).
+        pub fn sortFn(_: void, lhs: Collision, rhs: Collision) bool {
+            return lhs.type == .dynamic_static or rhs.type == .dynamic_dynamic;
+        }
+    }.sortFn;
+    std.sort.insertion(Collision, self.collisions.items, {}, sortLessThan);
+}
 
-    // Resolve all collisions
+fn resolveCollisions(self: *Self) void {
+    // Sort collisions:
+    // Make sure, dynamic vs. static collisions are resolved first, then dynamic vs. dynamic collisions.
+    sortCollisions(self);
+
+    // Resolve collisions
     for (self.collisions.items) |collision| {
-        const collision_type = collision.getType(self);
-        switch (collision_type) {
+        switch (collision.type) {
             .dynamic_static => self.resolveDynamicStaticCollision(collision),
             .dynamic_dynamic => self.resolveDynamicDynamicCollision(collision),
         }
     }
-}
-
-fn collisionLessThan(world: *const Self, a: Collision, b: Collision) bool {
-    const type_a = a.getType(world);
-    const type_b = b.getType(world);
-
-    // dynamic_static (0) comes before dynamic_dynamic (1)
-    return @intFromEnum(type_a) < @intFromEnum(type_b);
 }
 
 fn resolveDynamicStaticCollision(self: *Self, collision: Collision) void {
@@ -211,6 +210,47 @@ fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) void {
 //
 // Tests
 //
+
+const World = Self;
+
+fn createCollisionMock(collision_type: CollisionType) Collision {
+    return Collision{
+        .type = collision_type,
+        .body_a = undefined,
+        .body_b = undefined,
+        .mtv = undefined,
+        .normal = undefined,
+    };
+}
+
+test "World.sortCollisions :: should sort static collisions first" {
+    const allocator = std.testing.allocator;
+    var world = World.init(allocator, m.Vec2.zero());
+    defer world.deinit();
+
+    try world.collisions.append(allocator, createCollisionMock(.dynamic_dynamic));
+    try world.collisions.append(allocator, createCollisionMock(.dynamic_dynamic));
+    try world.collisions.append(allocator, createCollisionMock(.dynamic_static));
+    try world.collisions.append(allocator, createCollisionMock(.dynamic_static));
+    try world.collisions.append(allocator, createCollisionMock(.dynamic_dynamic));
+    try world.collisions.append(allocator, createCollisionMock(.dynamic_static));
+
+    world.sortCollisions();
+
+    const c0 = world.collisions.items[0];
+    const c1 = world.collisions.items[1];
+    const c2 = world.collisions.items[2];
+    const c3 = world.collisions.items[3];
+    const c4 = world.collisions.items[4];
+    const c5 = world.collisions.items[5];
+
+    try std.testing.expect(c0.type == .dynamic_static);
+    try std.testing.expect(c1.type == .dynamic_static);
+    try std.testing.expect(c2.type == .dynamic_static);
+    try std.testing.expect(c3.type == .dynamic_dynamic);
+    try std.testing.expect(c4.type == .dynamic_dynamic);
+    try std.testing.expect(c5.type == .dynamic_dynamic);
+}
 
 test "World: Should detect collision between overlapping dynamic bodies" {
     var world = Self.init(std.testing.allocator, null);
@@ -268,7 +308,7 @@ test "World: Should classify collision types correctly" {
 
     try std.testing.expect(world.collisions.items.len == 1);
     const collision = world.collisions.items[0];
-    try std.testing.expect(collision.getType(&world) == .dynamic_static);
+    try std.testing.expect(collision.type == .dynamic_static);
 }
 
 test "World: Should resolve dynamic vs static collision" {
