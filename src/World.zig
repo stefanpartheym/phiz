@@ -363,8 +363,11 @@ test "World.update: Should clamp velocity to terminal velocity" {
     const id = try world.addBody(Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(1, 1)));
     var body = world.getBody(id);
     // Set a very high acceleration.
-    body.acceleration = m.Vec2.new(10000, 0);
+    body.acceleration = m.Vec2.new(-10000, 10000);
     try world.update(1);
 
     try std.testing.expect(body.velocity.x() <= world.terminal_velocity);
+    try std.testing.expect(body.velocity.x() >= -world.terminal_velocity);
+    try std.testing.expect(body.velocity.y() <= world.terminal_velocity);
+    try std.testing.expect(body.velocity.y() >= -world.terminal_velocity);
 }
