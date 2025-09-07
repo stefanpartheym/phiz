@@ -207,13 +207,15 @@ fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) void {
     }
 }
 
-//
+//------------------------------------------------------------------------------
 // Tests
-//
+//------------------------------------------------------------------------------
 
 const World = Self;
 
-fn createCollisionMock(collision_type: CollisionType) Collision {
+/// Function to create a collision with the specified type.
+/// Do not use this for actual collision detection.
+fn mockCollisionType(collision_type: CollisionType) Collision {
     return Collision{
         .type = collision_type,
         .body_a = undefined,
@@ -223,17 +225,17 @@ fn createCollisionMock(collision_type: CollisionType) Collision {
     };
 }
 
-test "World.sortCollisions :: should sort static collisions first" {
+test "World.sortCollisions: should sort static collisions first" {
     const allocator = std.testing.allocator;
     var world = World.init(allocator, m.Vec2.zero());
     defer world.deinit();
 
-    try world.collisions.append(allocator, createCollisionMock(.dynamic_dynamic));
-    try world.collisions.append(allocator, createCollisionMock(.dynamic_dynamic));
-    try world.collisions.append(allocator, createCollisionMock(.dynamic_static));
-    try world.collisions.append(allocator, createCollisionMock(.dynamic_static));
-    try world.collisions.append(allocator, createCollisionMock(.dynamic_dynamic));
-    try world.collisions.append(allocator, createCollisionMock(.dynamic_static));
+    try world.collisions.append(allocator, mockCollisionType(.dynamic_dynamic));
+    try world.collisions.append(allocator, mockCollisionType(.dynamic_dynamic));
+    try world.collisions.append(allocator, mockCollisionType(.dynamic_static));
+    try world.collisions.append(allocator, mockCollisionType(.dynamic_static));
+    try world.collisions.append(allocator, mockCollisionType(.dynamic_dynamic));
+    try world.collisions.append(allocator, mockCollisionType(.dynamic_static));
 
     world.sortCollisions();
 
@@ -252,8 +254,8 @@ test "World.sortCollisions :: should sort static collisions first" {
     try std.testing.expect(c5.type == .dynamic_dynamic);
 }
 
-test "World: Should detect collision between overlapping dynamic bodies" {
-    var world = Self.init(std.testing.allocator, null);
+test "World.detectCollisions: Should detect collision between overlapping dynamic bodies" {
+    var world = World.init(std.testing.allocator, null);
     defer world.deinit();
 
     const body1 = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
@@ -266,8 +268,8 @@ test "World: Should detect collision between overlapping dynamic bodies" {
     try std.testing.expect(world.collisions.items.len == 1);
 }
 
-test "World: Should not detect collision between non-overlapping bodies" {
-    var world = Self.init(std.testing.allocator, null);
+test "World.detectCollisions: Should not detect collision between non-overlapping bodies" {
+    var world = World.init(std.testing.allocator, null);
     defer world.deinit();
 
     const body1 = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
@@ -280,8 +282,8 @@ test "World: Should not detect collision between non-overlapping bodies" {
     try std.testing.expect(world.collisions.items.len == 0);
 }
 
-test "World: Should skip static vs static collisions" {
-    var world = Self.init(std.testing.allocator, null);
+test "World.detectCollisions: Should skip static vs static collisions" {
+    var world = World.init(std.testing.allocator, null);
     defer world.deinit();
 
     const body1 = Body.new(.static, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
@@ -294,8 +296,8 @@ test "World: Should skip static vs static collisions" {
     try std.testing.expect(world.collisions.items.len == 0);
 }
 
-test "World: Should classify collision types correctly" {
-    var world = Self.init(std.testing.allocator, null);
+test "World.detectCollisions: Should classify collision types correctly" {
+    var world = World.init(std.testing.allocator, null);
     defer world.deinit();
 
     const dynamic = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
@@ -311,8 +313,8 @@ test "World: Should classify collision types correctly" {
     try std.testing.expect(collision.type == .dynamic_static);
 }
 
-test "World: Should resolve dynamic vs static collision" {
-    var world = Self.init(std.testing.allocator, null);
+test "World.detectCollisions: Should resolve dynamic vs static collision" {
+    var world = World.init(std.testing.allocator, null);
     defer world.deinit();
 
     const dynamic = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
@@ -330,8 +332,8 @@ test "World: Should resolve dynamic vs static collision" {
     try std.testing.expect(!resolved_body.position.eql(original_pos));
 }
 
-test "World: Should resolve dynamic vs dynamic collision" {
-    var world = Self.init(std.testing.allocator, null);
+test "World.resolveCollisions: Should resolve dynamic vs dynamic collision" {
+    var world = World.init(std.testing.allocator, null);
     defer world.deinit();
 
     const body1 = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
@@ -349,18 +351,18 @@ test "World: Should resolve dynamic vs dynamic collision" {
     const resolved_body1 = world.getBody(BodyId.new(0));
     const resolved_body2 = world.getBody(BodyId.new(1));
 
-    // Both bodies should have moved
+    // Both bodies should have moved.
     try std.testing.expect(!resolved_body1.position.eql(original_pos1));
     try std.testing.expect(!resolved_body2.position.eql(original_pos2));
 }
 
-test "World: Should clamp velocity to terminal velocity" {
-    var world = Self.init(std.testing.allocator, null);
+test "World.update: Should clamp velocity to terminal velocity" {
+    var world = World.init(std.testing.allocator, null);
     defer world.deinit();
 
     const id = try world.addBody(Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(1, 1)));
     var body = world.getBody(id);
-    // Set a very high acceleration
+    // Set a very high acceleration.
     body.acceleration = m.Vec2.new(10000, 0);
     try world.update(1);
 

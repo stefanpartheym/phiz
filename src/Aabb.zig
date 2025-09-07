@@ -41,8 +41,8 @@ pub fn getCenter(self: Self) m.Vec2 {
 }
 
 /// Calculates the minimum translation vector (MTV) to resolve overlap.
-/// Returns the MTV needed to separate `self` from `other`.
 /// The MTV points from `other` towards `self`.
+/// Returns `null`, if there is no overlap.
 pub fn getMtv(self: Self, other: Self) ?m.Vec2 {
     if (!self.intersects(other)) return null;
 
@@ -60,14 +60,14 @@ pub fn getMtv(self: Self, other: Self) ?m.Vec2 {
     }
 }
 
-//
+//------------------------------------------------------------------------------
 // Tests
-//
+//------------------------------------------------------------------------------
 
 const std = @import("std");
 const Aabb = Self;
 
-test "new: Should create a valid AABB" {
+test "Aabb.new: Should create a valid AABB" {
     const min = m.Vec2.new(0, 0);
     const max = m.Vec2.new(2, 2);
     const aabb = Aabb.new(min, max);
@@ -75,19 +75,19 @@ test "new: Should create a valid AABB" {
     try std.testing.expect(aabb.max.eql(max));
 }
 
-test "intersects: Should return true for overlapping AABBs" {
+test "Aabb.intersects: Should return true for overlapping AABBs" {
     const a = Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(2, 2));
     const b = Aabb.new(m.Vec2.new(1, 1), m.Vec2.new(3, 3));
     try std.testing.expect(a.intersects(b));
 }
 
-test "intersects: Should return true for overlapping AABBs (in negative space)" {
+test "Aabb.intersects: Should return true for overlapping AABBs (in negative space)" {
     const a = Aabb.new(m.Vec2.new(-2, -2), m.Vec2.new(0, 0));
     const b = Aabb.new(m.Vec2.new(-3, -3), m.Vec2.new(-1, -1));
     try std.testing.expect(a.intersects(b));
 }
 
-test "intersects: Should return true for AABBs just overlapping by epsilon" {
+test "Aabb.intersects: Should return true for AABBs just overlapping by epsilon" {
     // Epsilon (2^-23):
     // For f32 it's roughly: 0.00000011920929
     const epsilon = std.math.floatEps(f32);
@@ -97,34 +97,34 @@ test "intersects: Should return true for AABBs just overlapping by epsilon" {
     try std.testing.expect(a.intersects(b));
 }
 
-test "intersects: Should return false for AABBs overlapping only on X axis" {
+test "Aabb.intersects: Should return false for AABBs overlapping only on X axis" {
     const a = Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(2, 2));
     const b = Aabb.new(m.Vec2.new(1.9, 2), m.Vec2.new(3, 3));
     try std.testing.expect(!a.intersects(b));
 }
 
-test "intersects: Should return false for AABBs overlapping only on Y axis" {
+test "Aabb.intersects: Should return false for AABBs overlapping only on Y axis" {
     const a = Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(2, 2));
     const b = Aabb.new(m.Vec2.new(2, 1.9), m.Vec2.new(3, 3));
     try std.testing.expect(!a.intersects(b));
 }
 
-test "intersects: Should return false for AABBs not overlapping" {
+test "Aabb.intersects: Should return false for AABBs not overlapping" {
     const a = Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(2, 2));
     const b = Aabb.new(m.Vec2.new(2, 2), m.Vec2.new(3, 3));
     try std.testing.expect(!a.intersects(b));
 }
 
-test "getMtv: Should return null for non-overlapping AABBs" {
+test "Aabb.getMtv: Should return null for non-overlapping AABBs" {
     const a = Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(2, 2));
     const b = Aabb.new(m.Vec2.new(3, 3), m.Vec2.new(4, 4));
     try std.testing.expect(a.getMtv(b) == null);
 }
 
-test "getMtv: Should resolve horizontally when horizontal overlap is smaller" {
+test "Aabb.getMtv: Should resolve horizontally when horizontal overlap is smaller" {
     const a = Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(3, 4));
     const b = Aabb.new(m.Vec2.new(2, 0.5), m.Vec2.new(5, 3.5));
-    
+
     if (a.getMtv(b)) |mtv| {
         try std.testing.expect(mtv.y() == 0); // Should be horizontal resolution
         try std.testing.expect(mtv.x() < 0); // Should push a to the left
@@ -134,10 +134,10 @@ test "getMtv: Should resolve horizontally when horizontal overlap is smaller" {
     }
 }
 
-test "getMtv: Should resolve vertically when vertical overlap is smaller" {
+test "Aabb.getMtv: Should resolve vertically when vertical overlap is smaller" {
     const a = Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(4, 3));
     const b = Aabb.new(m.Vec2.new(0.5, 2), m.Vec2.new(3.5, 5));
-    
+
     if (a.getMtv(b)) |mtv| {
         try std.testing.expect(mtv.x() == 0); // Should be vertical resolution
         try std.testing.expect(mtv.y() < 0); // Should push a down
@@ -147,11 +147,11 @@ test "getMtv: Should resolve vertically when vertical overlap is smaller" {
     }
 }
 
-test "getMtv: Should resolve in correct direction based on centers" {
+test "Aabb.getMtv: Should resolve in correct direction based on centers" {
     // A is to the left of B
     const a = Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(3, 2));
     const b = Aabb.new(m.Vec2.new(2, 0), m.Vec2.new(4, 2));
-    
+
     if (a.getMtv(b)) |mtv| {
         try std.testing.expect(mtv.x() < 0); // Should push A away from B (left)
         try std.testing.expect(mtv.y() == 0);
@@ -161,10 +161,10 @@ test "getMtv: Should resolve in correct direction based on centers" {
     }
 }
 
-test "getMtv: Should handle perfect center alignment" {
+test "Aabb.getMtv: Should handle perfect center alignment" {
     const a = Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(2, 2));
     const b = Aabb.new(m.Vec2.new(1, 1), m.Vec2.new(3, 3));
-    
+
     if (a.getMtv(b)) |mtv| {
         // When overlaps are equal, it should pick vertical (overlap_x < overlap_y is false)
         try std.testing.expect(mtv.x() == 0);
