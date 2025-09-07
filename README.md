@@ -30,11 +30,13 @@ The list of features I'm planning to implement:
 
 ## Examples
 
-2D platformer:
+Platformer:
 
 ```sh
 zig build run-platformer
 ```
+
+Top-down:
 
 ```sh
 zig build run-topdown
