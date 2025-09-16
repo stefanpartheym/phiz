@@ -14,6 +14,7 @@ position: m.Vec2,
 size: m.Vec2,
 velocity: m.Vec2,
 acceleration: m.Vec2,
+drag: f32,
 mass: f32,
 inv_mass: f32,
 
@@ -25,6 +26,7 @@ pub fn new(body_type: BodyType, position: m.Vec2, size: m.Vec2) Self {
         .size = size,
         .velocity = m.Vec2.zero(),
         .acceleration = m.Vec2.zero(),
+        .drag = 0,
         .mass = switch (body_type) {
             .static => 0,
             .dynamic => default_mass,
@@ -74,6 +76,13 @@ pub fn applyImpulse(self: *Self, impulse: m.Vec2) void {
 pub fn accelerate(self: *Self, dt: f32) void {
     if (self.isStatic()) return;
     self.velocity = self.velocity.add(self.acceleration.scale(dt));
+}
+
+pub fn applyDrag(self: *Self, dt: f32) void {
+    if (self.isStatic()) return;
+    if (self.drag != 0) {
+        self.velocity = self.velocity.scale(@exp(-self.drag * dt));
+    }
 }
 
 /// x += v * dt

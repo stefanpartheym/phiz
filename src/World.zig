@@ -67,6 +67,7 @@ pub fn update(self: *Self, dt: f32) !void {
     for (self.bodies.items) |*body| {
         body.applyForce(self.gravity.scale(body.mass));
         body.accelerate(dt);
+        body.applyDrag(dt);
     }
 
     for (0..self.sub_steps) |_| {
