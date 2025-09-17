@@ -177,8 +177,8 @@ fn resolveDynamicStaticCollision(self: *Self, collision: Collision) void {
             body_a.velocity = body_a.velocity.sub(collision.normal.scale(velocity_along_normal));
         }
     } else {
-        body_b.position = body_b.position.add(collision.mtv.scale(-1));
-        const velocity_along_normal = body_b.velocity.dot(collision.normal.scale(-1));
+        body_b.position = body_b.position.add(collision.mtv.negate());
+        const velocity_along_normal = body_b.velocity.dot(collision.normal.negate());
         if (velocity_along_normal < 0) {
             body_b.velocity = body_b.velocity.sub(collision.normal.scale(-velocity_along_normal));
         }
