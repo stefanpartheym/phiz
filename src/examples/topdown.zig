@@ -6,6 +6,7 @@ const m = phiz.m;
 const DISPLAY_SIZE = m.Vec2_i32.new(800, 600);
 const PLAYER_SPEED = 900;
 const PLAYER_DAMPING = 3.5;
+const DIAGONAL_FACTOR: f32 = 1 / @sqrt(@as(f32, 2));
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -121,21 +122,42 @@ fn input(state: *State) !void {
         state.debugger.produceTime(1.0 / 60.0);
     }
 
-    // TODO: Implement better player controller, that allows for diagonal
-    // movement (consider the diagnoal factor: `1 / @sqrt(@as(f32, 2))`).
-    const movement = if (rl.isKeyDown(.h) or rl.isKeyDown(.left))
-        m.Vec2.left()
-    else if (rl.isKeyDown(.j) or rl.isKeyDown(.down))
-        m.Vec2.down().negate()
-    else if (rl.isKeyDown(.k) or rl.isKeyDown(.up))
-        m.Vec2.up().negate()
-    else if (rl.isKeyDown(.l) or rl.isKeyDown(.right))
-        m.Vec2.right()
-    else
-        m.Vec2.zero();
+    //
+    // Player movement
+    //
+
+    // Horizontal movement
+    var direction_h = m.Vec2.zero();
+
+    // Left
+    if (rl.isKeyDown(.h) or rl.isKeyDown(.a) or rl.isKeyDown(.left)) {
+        direction_h = m.Vec2.left();
+    }
+    // Right
+    else if (rl.isKeyDown(.l) or rl.isKeyDown(.d) or rl.isKeyDown(.right)) {
+        direction_h = m.Vec2.right();
+    }
+
+    // Vertical movement
+    var direction_v = m.Vec2.zero();
+
+    // Up
+    if (rl.isKeyDown(.k) or rl.isKeyDown(.w) or rl.isKeyDown(.up)) {
+        direction_v = m.Vec2.up().negate();
+    }
+    // Down
+    else if (rl.isKeyDown(.j) or rl.isKeyDown(.s) or rl.isKeyDown(.down)) {
+        direction_v = m.Vec2.down().negate();
+    }
+
+    const direction = direction_h.add(direction_v);
+    const is_diagonal_movement = direction.x() != 0 and direction.y() != 0;
+    // In case of diagonal movement, speed must be modulated by the diagonal
+    // factor to avoid diagonal movement being faster.
+    const scaled_speed = PLAYER_SPEED * if (is_diagonal_movement) DIAGONAL_FACTOR else 1;
 
     const player = state.world.getBody(state.player);
-    player.applyForce(movement.scale(PLAYER_SPEED));
+    player.applyForce(direction.scale(scaled_speed));
 }
 
 fn update(state: *State, dt: f32) !void {
