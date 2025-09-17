@@ -5,7 +5,7 @@ const m = phiz.m;
 
 const display_size = m.Vec2_i32.new(800, 600);
 const PLAYER_SPEED = 900;
-const PLAYER_DRAG = 3.5;
+const PLAYER_DAMPING = 3.5;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -83,7 +83,7 @@ fn setup(state: *State) !void {
         m.Vec2.new(50, 50),
     ));
     const player_body = state.world.getBody(state.player);
-    player_body.drag = PLAYER_DRAG;
+    player_body.damping = PLAYER_DAMPING;
 }
 
 fn reset(state: *State) !void {

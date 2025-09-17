@@ -67,7 +67,7 @@ pub fn update(self: *Self, dt: f32) !void {
         body.penetration = m.Vec2.zero(); // Reset penetration from previous frame.
         body.applyForce(self.gravity.scale(body.mass));
         body.accelerate(dt);
-        body.applyDrag(dt);
+        body.applyDamping(dt);
     }
 
     for (0..self.sub_steps) |_| {

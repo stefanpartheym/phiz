@@ -14,7 +14,7 @@ position: m.Vec2,
 size: m.Vec2,
 velocity: m.Vec2,
 acceleration: m.Vec2,
-drag: f32,
+damping: f32,
 mass: f32,
 inv_mass: f32,
 /// Contains the deepest penetration caused by collisions on each axis.
@@ -28,7 +28,7 @@ pub fn new(body_type: BodyType, position: m.Vec2, size: m.Vec2) Self {
         .size = size,
         .velocity = m.Vec2.zero(),
         .acceleration = m.Vec2.zero(),
-        .drag = 0,
+        .damping = 0,
         .mass = switch (body_type) {
             .static => 0,
             .dynamic => default_mass,
@@ -81,10 +81,10 @@ pub fn accelerate(self: *Self, dt: f32) void {
     self.velocity = self.velocity.add(self.acceleration.scale(dt));
 }
 
-pub fn applyDrag(self: *Self, dt: f32) void {
+pub fn applyDamping(self: *Self, dt: f32) void {
     if (self.isStatic()) return;
-    if (self.drag != 0) {
-        self.velocity = self.velocity.scale(@exp(-self.drag * dt));
+    if (self.damping != 0) {
+        self.velocity = self.velocity.scale(@exp(-self.damping * dt));
     }
 }
 

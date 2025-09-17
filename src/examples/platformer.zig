@@ -4,8 +4,8 @@ const phiz = @import("phiz");
 const m = phiz.m;
 
 const display_size = m.Vec2_i32.new(800, 600);
-const PLAYER_DRAG_GROUND = 3.5;
-const PLAYER_DRAG_AIR = 0.5;
+const PLAYER_DAMPING_GROUND = 3.5;
+const PLAYER_DAMPING_AIR = 0.5;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -136,9 +136,9 @@ fn update(state: *State, dt: f32) !void {
         moving_body.applyForce(m.Vec2.new(-100, 0));
         const player_body = state.world.getBody(state.player);
         if (player_body.penetration.y() < 0) {
-            player_body.drag = PLAYER_DRAG_GROUND;
+            player_body.damping = PLAYER_DAMPING_GROUND;
         } else {
-            player_body.drag = PLAYER_DRAG_AIR;
+            player_body.damping = PLAYER_DAMPING_AIR;
         }
         try state.world.update(dt);
     }
