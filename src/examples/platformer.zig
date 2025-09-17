@@ -4,6 +4,8 @@ const phiz = @import("phiz");
 const m = phiz.m;
 
 const DISPLAY_SIZE = m.Vec2_i32.new(800, 600);
+const PLAYER_SPEED_GROUND = 900;
+const PLAYER_SPEED_AIR = 300;
 const PLAYER_DAMPING_GROUND = 3.5;
 const PLAYER_DAMPING_AIR = 0.5;
 
@@ -35,7 +37,7 @@ pub fn main() !void {
 fn setup(state: *State) !void {
     const display_size_f32 = DISPLAY_SIZE.cast(f32);
     const collider_size = 20;
-    // Add a moving body.
+    // Moving body
     _ = try state.world.addBody(phiz.Body.new(
         .dynamic,
         m.Vec2.new(display_size_f32.x() - 100, 100),
@@ -61,14 +63,20 @@ fn setup(state: *State) !void {
         m.Vec2.new(collider_size, display_size_f32.y() / 2),
     ));
 
-    // Add a thin platform.
+    // Low platform
+    _ = try state.world.addBody(phiz.Body.new(
+        .static,
+        m.Vec2.new(450, 450),
+        m.Vec2.new(200, collider_size / 2),
+    ));
+    // High platform
     _ = try state.world.addBody(phiz.Body.new(
         .static,
         m.Vec2.new(50, 300),
         m.Vec2.new(200, collider_size / 2),
     ));
 
-    // Add player.
+    // Player
     state.player = try state.world.addBody(phiz.Body.new(
         .dynamic,
         m.Vec2.new(100, 100),
@@ -111,6 +119,7 @@ fn input(state: *State) !void {
         state.debugger.produceTime(1.0 / 60.0);
     }
 
+    // Player movement
     const movement = if (rl.isKeyDown(.h) or rl.isKeyDown(.left))
         m.Vec2.left()
     else if (rl.isKeyDown(.j) or rl.isKeyDown(.down))
@@ -123,10 +132,12 @@ fn input(state: *State) !void {
         m.Vec2.zero();
 
     const player = state.world.getBody(state.player);
-    player.applyForce(movement.scale(900));
+    const speed: f32 = if (bodyIsGrounded(player)) PLAYER_SPEED_GROUND else PLAYER_SPEED_AIR;
+    player.applyForce(movement.scale(speed));
 
-    if (rl.isKeyPressed(.space)) {
-        player.applyImpulse(m.Vec2.new(0, -400));
+    // Jump
+    if (bodyIsGrounded(player) and rl.isKeyPressed(.space)) {
+        player.applyImpulse(m.Vec2.new(0, -700));
     }
 }
 
@@ -254,6 +265,10 @@ fn renderHud(state: *State) void {
             rl.Color.ray_white,
         );
     }
+}
+
+fn bodyIsGrounded(body: *phiz.Body) bool {
+    return body.penetration.y() < 0;
 }
 
 const State = struct {
