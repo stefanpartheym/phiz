@@ -63,8 +63,8 @@ pub fn deinit(self: *Self) void {
 }
 
 pub fn update(self: *Self, dt: f32) !void {
-    // Apply forces.
     for (self.bodies.items) |*body| {
+        body.penetration = m.Vec2.zero(); // Reset penetration from previous frame.
         body.applyForce(self.gravity.scale(body.mass));
         body.accelerate(dt);
         body.applyDrag(dt);
@@ -133,6 +133,9 @@ fn detectCollisions(self: *Self) !void {
                     .normal = mtv.norm(),
                 };
                 try self.collisions.append(self.allocator, collision);
+                // Store the penetration in both bodies.
+                body_a.accumulatePenetration(mtv);
+                body_b.accumulatePenetration(mtv.negate());
             }
         }
     }
@@ -259,14 +262,18 @@ test "World.detectCollisions: Should detect collision between overlapping dynami
     var world = World.init(std.testing.allocator, null);
     defer world.deinit();
 
-    const body1 = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
-    const body2 = Body.new(.dynamic, m.Vec2.new(1, 1), m.Vec2.new(2, 2));
-
-    _ = try world.addBody(body1);
-    _ = try world.addBody(body2);
+    const body1_id = try world.addBody(Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2)));
+    const body2_id = try world.addBody(Body.new(.dynamic, m.Vec2.new(1, 1), m.Vec2.new(2, 2)));
+    const body1 = world.getBody(body1_id);
+    const body2 = world.getBody(body2_id);
 
     try world.detectCollisions();
+
     try std.testing.expect(world.collisions.items.len == 1);
+    try std.testing.expectEqual(0, body1.penetration.x());
+    try std.testing.expectEqual(-1, body1.penetration.y());
+    try std.testing.expectEqual(0, body2.penetration.x());
+    try std.testing.expectEqual(1, body2.penetration.y());
 }
 
 test "World.detectCollisions: Should not detect collision between non-overlapping bodies" {
@@ -295,6 +302,28 @@ test "World.detectCollisions: Should skip static vs static collisions" {
 
     try world.detectCollisions();
     try std.testing.expect(world.collisions.items.len == 0);
+}
+
+test "World.detectCollisions: Should accumulate penetrations correctly (use deepest penetration on each axis)" {
+    var world = World.init(std.testing.allocator, null);
+    defer world.deinit();
+
+    const body1_id = try world.addBody(Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(4, 4)));
+    const body2_id = try world.addBody(Body.new(.dynamic, m.Vec2.new(0, 2), m.Vec2.new(4, 4)));
+    const body3_id = try world.addBody(Body.new(.dynamic, m.Vec2.new(3, 0), m.Vec2.new(2, 2)));
+    const body1 = world.getBody(body1_id);
+    const body2 = world.getBody(body2_id);
+    const body3 = world.getBody(body3_id);
+
+    try world.detectCollisions();
+
+    try std.testing.expect(world.collisions.items.len == 2);
+    try std.testing.expectEqual(-1, body1.penetration.x());
+    try std.testing.expectEqual(-2, body1.penetration.y());
+    try std.testing.expectEqual(0, body2.penetration.x());
+    try std.testing.expectEqual(2, body2.penetration.y());
+    try std.testing.expectEqual(1, body3.penetration.x());
+    try std.testing.expectEqual(0, body3.penetration.y());
 }
 
 test "World.detectCollisions: Should classify collision types correctly" {

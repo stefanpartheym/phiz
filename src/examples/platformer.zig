@@ -4,7 +4,8 @@ const phiz = @import("phiz");
 const m = phiz.m;
 
 const display_size = m.Vec2_i32.new(800, 600);
-const PLAYER_DRAG = 3.5;
+const PLAYER_DRAG_GROUND = 3.5;
+const PLAYER_DRAG_AIR = 0.5;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -73,8 +74,6 @@ fn setup(state: *State) !void {
         m.Vec2.new(100, 100),
         m.Vec2.new(25, 50),
     ));
-    const player_body = state.world.getBody(state.player);
-    player_body.drag = PLAYER_DRAG;
 }
 
 fn reset(state: *State) !void {
@@ -135,6 +134,12 @@ fn update(state: *State, dt: f32) !void {
     if (state.physics_enabled) {
         const moving_body = state.world.getBody(phiz.BodyId.new(0));
         moving_body.applyForce(m.Vec2.new(-100, 0));
+        const player_body = state.world.getBody(state.player);
+        if (player_body.penetration.y() < 0) {
+            player_body.drag = PLAYER_DRAG_GROUND;
+        } else {
+            player_body.drag = PLAYER_DRAG_AIR;
+        }
         try state.world.update(dt);
     }
 }
@@ -161,6 +166,7 @@ fn renderBody(body: phiz.Body) void {
 }
 
 fn renderBodyDebug(body: phiz.Body, index: usize) void {
+    // Bounding box
     const aabb = body.getAabb();
     const aabb_pos = aabb.min;
     const aabb_size = aabb.getSize();
@@ -174,19 +180,43 @@ fn renderBodyDebug(body: phiz.Body, index: usize) void {
         1,
         rl.Color.red,
     );
+
+    // Center point
     const body_center = body.getCenter();
     rl.drawCircleV(
         rl.Vector2.init(body_center.x(), body_center.y()),
         2,
         rl.Color.red,
     );
-    const body_velocity = body.getCenter().add(body.velocity.scale(0.1));
+
     if (body.isDynamic()) {
+        // Velocity
+        const body_velocity = body.getCenter().add(body.velocity.scale(0.1));
         rl.drawLineV(
             rl.Vector2.init(body_center.x(), body_center.y()),
             rl.Vector2.init(body_velocity.x(), body_velocity.y()),
             rl.Color.red,
         );
+
+        // Collision normal
+        const half_size = aabb.getHalfSize();
+        const direction = m.Vec2{ .data = std.math.sign(body.penetration.data) };
+        const edge = body_center.add(direction.mul(half_size).negate());
+        const normal = edge.add(direction.mul(half_size.scale(0.75)));
+        if (normal.x() != 0) {
+            rl.drawLineV(
+                rl.Vector2.init(edge.x(), body_center.y()),
+                rl.Vector2.init(normal.x(), body_center.y()),
+                rl.Color.yellow,
+            );
+        }
+        if (normal.y() != 0) {
+            rl.drawLineV(
+                rl.Vector2.init(body_center.x(), edge.y()),
+                rl.Vector2.init(body_center.x(), normal.y()),
+                rl.Color.yellow,
+            );
+        }
     }
 
     // Body index

@@ -17,6 +17,8 @@ acceleration: m.Vec2,
 drag: f32,
 mass: f32,
 inv_mass: f32,
+/// Contains the deepest penetration caused by collisions on each axis.
+penetration: m.Vec2,
 
 pub fn new(body_type: BodyType, position: m.Vec2, size: m.Vec2) Self {
     const default_mass = 1;
@@ -35,6 +37,7 @@ pub fn new(body_type: BodyType, position: m.Vec2, size: m.Vec2) Self {
             .static => 0,
             .dynamic => 1 / default_mass,
         },
+        .penetration = m.Vec2.zero(),
     };
 }
 
@@ -89,4 +92,10 @@ pub fn applyDrag(self: *Self, dt: f32) void {
 pub fn integrate(self: *Self, dt: f32) void {
     if (self.isStatic()) return;
     self.position = self.position.add(self.velocity.scale(dt));
+}
+
+/// Accumulate the deepest penetration caused by collisions on each axis.
+pub fn accumulatePenetration(self: *Self, value: m.Vec2) void {
+    if (@abs(value.x()) > @abs(self.penetration.x())) self.penetration.xMut().* = value.x();
+    if (@abs(value.y()) > @abs(self.penetration.y())) self.penetration.yMut().* = value.y();
 }

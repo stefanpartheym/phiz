@@ -4,6 +4,8 @@ const phiz = @import("phiz");
 const m = phiz.m;
 
 const display_size = m.Vec2_i32.new(800, 600);
+const PLAYER_SPEED = 900;
+const PLAYER_DRAG = 3.5;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -31,7 +33,7 @@ pub fn main() !void {
 }
 
 fn setup(state: *State) !void {
-    const display_size_f32 = display_size.cast(f32);
+    const display_size_f32: m.Vec2 = display_size.cast(f32);
     const collider_size = 20;
     // Top
     _ = try state.world.addBody(phiz.Body.new(
@@ -77,9 +79,11 @@ fn setup(state: *State) !void {
     // Add player.
     state.player = try state.world.addBody(phiz.Body.new(
         .dynamic,
-        m.Vec2.new(100, 100),
+        display_half_size.sub(m.Vec2.one().scale(25)),
         m.Vec2.new(50, 50),
     ));
+    const player_body = state.world.getBody(state.player);
+    player_body.drag = PLAYER_DRAG;
 }
 
 fn reset(state: *State) !void {
@@ -117,6 +121,8 @@ fn input(state: *State) !void {
         state.debugger.produceTime(1.0 / 60.0);
     }
 
+    // TODO: Implement better player controller, that allows for diagonal
+    // movement (consider the diagnoal factor: `1 / @sqrt(@as(f32, 2))`).
     const movement = if (rl.isKeyDown(.h) or rl.isKeyDown(.left))
         m.Vec2.left()
     else if (rl.isKeyDown(.j) or rl.isKeyDown(.down))
@@ -129,7 +135,7 @@ fn input(state: *State) !void {
         m.Vec2.zero();
 
     const player = state.world.getBody(state.player);
-    player.applyForce(movement.scale(300));
+    player.applyForce(movement.scale(PLAYER_SPEED));
 }
 
 fn update(state: *State, dt: f32) !void {
@@ -160,6 +166,7 @@ fn renderBody(body: phiz.Body) void {
 }
 
 fn renderBodyDebug(body: phiz.Body, index: usize) void {
+    // Bounding box
     const aabb = body.getAabb();
     const aabb_pos = aabb.min;
     const aabb_size = aabb.getSize();
@@ -173,19 +180,43 @@ fn renderBodyDebug(body: phiz.Body, index: usize) void {
         1,
         rl.Color.red,
     );
+
+    // Center point
     const body_center = body.getCenter();
     rl.drawCircleV(
         rl.Vector2.init(body_center.x(), body_center.y()),
         2,
         rl.Color.red,
     );
-    const body_velocity = body.getCenter().add(body.velocity.scale(0.1));
+
     if (body.isDynamic()) {
+        // Velocity
+        const body_velocity = body.getCenter().add(body.velocity.scale(0.1));
         rl.drawLineV(
             rl.Vector2.init(body_center.x(), body_center.y()),
             rl.Vector2.init(body_velocity.x(), body_velocity.y()),
             rl.Color.red,
         );
+
+        // Collision normal
+        const half_size = aabb.getHalfSize();
+        const direction = m.Vec2{ .data = std.math.sign(body.penetration.data) };
+        const edge = body_center.add(direction.mul(half_size).negate());
+        const normal = edge.add(direction.mul(half_size.scale(0.75)));
+        if (normal.x() != 0) {
+            rl.drawLineV(
+                rl.Vector2.init(edge.x(), body_center.y()),
+                rl.Vector2.init(normal.x(), body_center.y()),
+                rl.Color.yellow,
+            );
+        }
+        if (normal.y() != 0) {
+            rl.drawLineV(
+                rl.Vector2.init(body_center.x(), edge.y()),
+                rl.Vector2.init(body_center.x(), normal.y()),
+                rl.Color.yellow,
+            );
+        }
     }
 
     // Body index
