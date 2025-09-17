@@ -3,7 +3,7 @@ const rl = @import("raylib");
 const phiz = @import("phiz");
 const m = phiz.m;
 
-const display_size = m.Vec2_i32.new(800, 600);
+const DISPLAY_SIZE = m.Vec2_i32.new(800, 600);
 const PLAYER_SPEED = 900;
 const PLAYER_DAMPING = 3.5;
 
@@ -14,7 +14,7 @@ pub fn main() !void {
 
     rl.setTargetFPS(60);
     rl.setConfigFlags(.{ .window_highdpi = true });
-    rl.initWindow(display_size.x(), display_size.y(), "phiz example: top-down");
+    rl.initWindow(DISPLAY_SIZE.x(), DISPLAY_SIZE.y(), "phiz example: top-down");
     defer rl.closeWindow();
 
     var state = State.init(allocator);
@@ -33,7 +33,7 @@ pub fn main() !void {
 }
 
 fn setup(state: *State) !void {
-    const display_size_f32: m.Vec2 = display_size.cast(f32);
+    const display_size_f32: m.Vec2 = DISPLAY_SIZE.cast(f32);
     const collider_size = 20;
     // Top
     _ = try state.world.addBody(phiz.Body.new(
