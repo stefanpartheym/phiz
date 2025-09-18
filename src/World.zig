@@ -4,6 +4,13 @@ const Body = @import("./Body.zig");
 
 const Self = @This();
 
+pub const BodyId = struct {
+    index: usize,
+    pub fn new(index: usize) @This() {
+        return @This(){ .index = index };
+    }
+};
+
 const Collision = struct {
     type: CollisionType,
     body_a: BodyId,
@@ -31,27 +38,46 @@ const CollisionType = enum {
 pub const DEFAULT_GRAVITY = m.Vec2.new(0, 9.81 * 100);
 /// Default terminal velocity.
 pub const DEFAULT_TERMINAL_VELOCITY: f32 = 1000;
+/// Default fixed timestep for physics simulation.
+pub const DEFAULT_FIXED_TIMESTEP: f32 = 1.0 / 60.0;
 
-pub const BodyId = struct {
-    index: usize,
-    pub fn new(index: usize) @This() {
-        return @This(){ .index = index };
-    }
+pub const TimestepMode = enum {
+    /// Use a fixed timestep for physics (recommended).
+    /// This will run the physics simulation every `fixed_timestep` seconds,
+    /// which makes it consistent accross frame rates.
+    fixed,
+    /// Use a variable timestep for physics.
+    /// This will run the physics simulation every frame.
+    variable,
+};
+
+pub const Config = struct {
+    timestep_mode: TimestepMode = .fixed,
+    fixed_timestep: f32 = DEFAULT_FIXED_TIMESTEP,
+    gravity: m.Vec2 = DEFAULT_GRAVITY,
+    terminal_velocity: f32 = DEFAULT_TERMINAL_VELOCITY,
+    sub_steps: usize = 8,
 };
 
 allocator: std.mem.Allocator,
+timestep_mode: TimestepMode,
+fixed_timestep: f32,
 gravity: m.Vec2,
 terminal_velocity: f32,
 sub_steps: usize,
+dt_accumulator: f32,
 bodies: std.ArrayList(Body),
 collisions: std.ArrayList(Collision),
 
-pub fn init(allocator: std.mem.Allocator, gravity: ?m.Vec2) Self {
+pub fn init(allocator: std.mem.Allocator, config: Config) Self {
     return Self{
         .allocator = allocator,
-        .gravity = gravity orelse DEFAULT_GRAVITY,
-        .terminal_velocity = DEFAULT_TERMINAL_VELOCITY,
-        .sub_steps = 8,
+        .timestep_mode = config.timestep_mode,
+        .fixed_timestep = config.fixed_timestep,
+        .gravity = config.gravity,
+        .terminal_velocity = config.terminal_velocity,
+        .sub_steps = config.sub_steps,
+        .dt_accumulator = 0,
         .bodies = std.ArrayList(Body){},
         .collisions = std.ArrayList(Collision){},
     };
@@ -63,29 +89,44 @@ pub fn deinit(self: *Self) void {
 }
 
 pub fn update(self: *Self, dt: f32) !void {
+    // Accumulate delta time for the physics step to consume.
+    self.dt_accumulator += dt;
+    // Calculate physics timestep and substep.
+    const timestep = if (self.timestep_mode == .variable) dt else self.fixed_timestep;
+    const substep = timestep / @as(f32, @floatFromInt(self.sub_steps));
+
+    // Apply gravity.
     for (self.bodies.items) |*body| {
-        body.penetration = m.Vec2.zero(); // Reset penetration from previous frame.
         body.applyForce(self.gravity.scale(body.mass));
-        body.accelerate(dt);
-        body.applyDamping(dt);
     }
 
-    for (0..self.sub_steps) |_| {
-        const step_dt = dt / @as(f32, @floatFromInt(self.sub_steps));
+    // Physis step: Run integration and collision detection.
+    while (timestep > 0 and self.dt_accumulator >= timestep) {
+        self.dt_accumulator -= timestep;
 
-        // Integrate bodies.
+        // Acceleration.
         for (self.bodies.items) |*body| {
-            body.integrate(step_dt);
+            // Reset penetration from previous physics step.
+            body.penetration = m.Vec2.zero();
+            body.accelerate(timestep);
         }
 
-        // Detect and resolve collisions.
-        try self.detectCollisions();
-        self.resolveCollisions();
+        // Integration and collision detection.
+        for (0..self.sub_steps) |_| {
+            // Integrate bodies.
+            for (self.bodies.items) |*body| {
+                body.integrate(substep);
+            }
 
-        // Account for floating point inaccuracies.
-        for (self.bodies.items) |*body| {
-            if (body.velocity.length() < 0.1) {
-                body.velocity = m.Vec2.zero();
+            // Detect and resolve collisions.
+            try self.detectCollisions();
+            self.resolveCollisions();
+
+            // Account for floating point inaccuracies.
+            for (self.bodies.items) |*body| {
+                if (body.velocity.length() < 0.1) {
+                    body.velocity = m.Vec2.zero();
+                }
             }
         }
     }
@@ -231,7 +272,7 @@ fn mockCollisionType(collision_type: CollisionType) Collision {
 
 test "World.sortCollisions: should sort static collisions first" {
     const allocator = std.testing.allocator;
-    var world = World.init(allocator, m.Vec2.zero());
+    var world = World.init(allocator, .{ .gravity = m.Vec2.zero() });
     defer world.deinit();
 
     try world.collisions.append(allocator, mockCollisionType(.dynamic_dynamic));
@@ -259,7 +300,7 @@ test "World.sortCollisions: should sort static collisions first" {
 }
 
 test "World.detectCollisions: Should detect collision between overlapping dynamic bodies" {
-    var world = World.init(std.testing.allocator, null);
+    var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
     const body1_id = try world.addBody(Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2)));
@@ -277,7 +318,7 @@ test "World.detectCollisions: Should detect collision between overlapping dynami
 }
 
 test "World.detectCollisions: Should not detect collision between non-overlapping bodies" {
-    var world = World.init(std.testing.allocator, null);
+    var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
     const body1 = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
@@ -291,7 +332,7 @@ test "World.detectCollisions: Should not detect collision between non-overlappin
 }
 
 test "World.detectCollisions: Should skip static vs static collisions" {
-    var world = World.init(std.testing.allocator, null);
+    var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
     const body1 = Body.new(.static, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
@@ -305,7 +346,7 @@ test "World.detectCollisions: Should skip static vs static collisions" {
 }
 
 test "World.detectCollisions: Should accumulate penetrations correctly (use deepest penetration on each axis)" {
-    var world = World.init(std.testing.allocator, null);
+    var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
     const body1_id = try world.addBody(Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(4, 4)));
@@ -327,7 +368,7 @@ test "World.detectCollisions: Should accumulate penetrations correctly (use deep
 }
 
 test "World.detectCollisions: Should classify collision types correctly" {
-    var world = World.init(std.testing.allocator, null);
+    var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
     const dynamic = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
@@ -344,7 +385,7 @@ test "World.detectCollisions: Should classify collision types correctly" {
 }
 
 test "World.detectCollisions: Should resolve dynamic vs static collision" {
-    var world = World.init(std.testing.allocator, null);
+    var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
     const dynamic = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
@@ -363,7 +404,7 @@ test "World.detectCollisions: Should resolve dynamic vs static collision" {
 }
 
 test "World.resolveCollisions: Should resolve dynamic vs dynamic collision" {
-    var world = World.init(std.testing.allocator, null);
+    var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
     const body1 = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
@@ -387,7 +428,7 @@ test "World.resolveCollisions: Should resolve dynamic vs dynamic collision" {
 }
 
 test "World.update: Should clamp velocity to terminal velocity" {
-    var world = World.init(std.testing.allocator, null);
+    var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
     const id = try world.addBody(Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(1, 1)));

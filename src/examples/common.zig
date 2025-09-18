@@ -36,12 +36,12 @@ pub const State = struct {
     world: phiz.World,
     player: phiz.BodyId,
 
-    pub fn init(allocator: std.mem.Allocator) Self {
+    pub fn init(allocator: std.mem.Allocator, physics_config: phiz.World.Config) Self {
         return Self{
             .running = true,
             .debugger = Debugger.init,
             .physics_enabled = true,
-            .world = phiz.World.init(allocator, null),
+            .world = phiz.World.init(allocator, physics_config),
             .player = undefined,
         };
     }

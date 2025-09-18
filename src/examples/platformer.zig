@@ -21,7 +21,7 @@ pub fn main() !void {
     rl.initWindow(DISPLAY_SIZE.x(), DISPLAY_SIZE.y(), "phiz example: platformer");
     defer rl.closeWindow();
 
-    var state = State.init(allocator);
+    var state = State.init(allocator, .{});
     defer state.deinit();
     try setup(&state);
 
