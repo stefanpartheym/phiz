@@ -82,6 +82,7 @@ pub fn update(self: *Self, timestep: f32) !void {
         // Apply gravity and accelerate.
         body.applyForce(self.gravity.scale(body.mass));
         body.accelerate(timestep);
+        body.applyDamping(timestep);
     }
 
     // Integration and collision detection.

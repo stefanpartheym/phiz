@@ -8,10 +8,10 @@ const State = common.State;
 const DISPLAY_SIZE = m.Vec2_i32.new(800, 600);
 const TARGET_FPS = 60;
 const PHYSICS_TIMESTEP: f32 = 1.0 / 60.0;
-const PLAYER_SPEED_GROUND = 900;
-const PLAYER_SPEED_AIR = 300;
-const PLAYER_DAMPING_GROUND = 3.5;
-const PLAYER_DAMPING_AIR = 0;
+const PLAYER_SPEED_GROUND = 2000;
+const PLAYER_SPEED_AIR = 250;
+const PLAYER_DAMPING_GROUND = 7.5;
+const PLAYER_DAMPING_AIR = 0.5;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -156,6 +156,11 @@ fn update(state: *State, dt: f32) !void {
             }
             // Update physics.
             try state.world.update(PHYSICS_TIMESTEP);
+            // Update player damping based on whether the player is on the ground or in the air.
+            player_body.damping = if (bodyIsGrounded(player_body))
+                PLAYER_DAMPING_GROUND
+            else
+                PLAYER_DAMPING_AIR;
         }
     }
 }

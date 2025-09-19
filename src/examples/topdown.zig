@@ -9,8 +9,8 @@ const DISPLAY_SIZE = m.Vec2_i32.new(800, 600);
 const TARGET_FPS = 60;
 const PHYSICS_TIMESTEP: f32 = 1.0 / 60.0;
 const DIAGONAL_FACTOR: f32 = 1.0 / @sqrt(@as(f32, 2));
-const PLAYER_SPEED = 900;
-const PLAYER_DAMPING = 3.5;
+const PLAYER_SPEED = 1000;
+const PLAYER_DAMPING = 5;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -87,6 +87,8 @@ fn setup(state: *State) !void {
         display_half_size.sub(m.Vec2.one().scale(25)),
         m.Vec2.new(50, 50),
     ));
+    const player_body = state.world.getBody(state.player);
+    player_body.damping = PLAYER_DAMPING;
 }
 
 fn reset(state: *State) !void {
@@ -152,14 +154,7 @@ fn input(state: *State) !void {
         direction_v = m.Vec2.down().negate();
     }
 
-    const direction = direction_h.add(direction_v);
-    const is_diagonal_movement = direction.x() != 0 and direction.y() != 0;
-    // In case of diagonal movement, speed must be modulated by the diagonal
-    // factor to avoid diagonal movement being faster.
-    const scaled_speed = PLAYER_SPEED * if (is_diagonal_movement) DIAGONAL_FACTOR else 1;
-
-    const player = state.world.getBody(state.player);
-    player.applyForce(direction.scale(scaled_speed));
+    state.input.movement = direction_h.add(direction_v);
 }
 
 fn update(state: *State, dt: f32) !void {
@@ -168,8 +163,15 @@ fn update(state: *State, dt: f32) !void {
         const player_body = state.world.getBody(state.player);
         while (state.accumulator >= PHYSICS_TIMESTEP) {
             state.accumulator -= PHYSICS_TIMESTEP;
-            // Apply forces to the player body.
-            player_body.applyForce(state.input.movement.scale(PLAYER_SPEED));
+            {
+                const movement = state.input.movement;
+                const is_diagonal_movement = movement.x() != 0 and movement.y() != 0;
+                // In case of diagonal movement, speed must be modulated by the diagonal
+                // factor to avoid diagonal movement being faster.
+                const scaled_speed = PLAYER_SPEED * if (is_diagonal_movement) DIAGONAL_FACTOR else 1;
+                // Apply forces to the player body.
+                player_body.applyForce(state.input.movement.scale(scaled_speed));
+            }
             // Update physics.
             try state.world.update(PHYSICS_TIMESTEP);
         }
