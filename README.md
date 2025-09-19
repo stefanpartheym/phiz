@@ -14,7 +14,7 @@ The engine is **not** intended to solve complex collision scenarios. For a full 
 
 - (Currently) only supports discrete collision detection (DCD).
 - Collision detection only supports axis aligned bodies (no rotated bodies).
-- Collision detection (currently) only supports rectangle shapes.
+- Collision detection only supports rectangle and circle shapes.
 
 ## Features
 
@@ -23,24 +23,35 @@ The list of features I'm planning to implement:
 - [x] AABB vs AABB collision detection (discrete)
 - [x] Collision response for dynamic body vs static body collisions
 - [x] Fully inelastic collision response for dynamic body vs dynamic body collisions
-- [ ] Circle vs AABB collision detection (discrete)
-- [ ] Circle vs circle collision detection (discrete)
+- [x] Circle vs AABB collision detection (discrete)
+- [x] Circle vs circle collision detection (discrete)
 - [ ] Broad phase collision detection (via spatial partitioning, quadtrees, etc.)
 - [ ] Continuous collision detection for fast moving bodies
 
 ## Examples
 
-Platformer:
+Both examples use a fixed timestep of 1/60 seconds for physics simulation. This will provide consistent physics
+simulation across frame rates and serves sort of a "best practice" on how to use the engine.
+
+### Platformer
 
 ```sh
 zig build run-platformer
 ```
 
-Top-down:
+This example demonstrates the use of gravity and a simple player controller for side-scrolling platformers.
+Damping is used with two different values based on the player being on the ground or in the air.
+This ensures the player will fall naturally due to gravity, but will gradually decelerate while being on the ground.
+
+### Top-down
 
 ```sh
 zig build run-topdown
 ```
+
+This example demonstrates how to use the engine for top-down games (like RPG's, dungeon crawlers, survivor-likes, etc.),
+that usually don't have gravity involved, since it's sort of a "top-down" view.
+For the player a circle shape is used, which provides smooth sliding past corners.
 
 ## Resources
 
