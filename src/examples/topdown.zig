@@ -44,22 +44,22 @@ fn setup(state: *State) !void {
     // Top
     _ = try state.world.addBody(phiz.Body.new(.static, .{
         .position = m.Vec2.new(0, 0),
-        .size = m.Vec2.new(display_size_f32.x(), collider_size),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(display_size_f32.x(), collider_size) } },
     }));
     // Bottom
     _ = try state.world.addBody(phiz.Body.new(.static, .{
         .position = m.Vec2.new(0, display_size_f32.y() - collider_size),
-        .size = m.Vec2.new(display_size_f32.x(), collider_size),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(display_size_f32.x(), collider_size) } },
     }));
     // Left
     _ = try state.world.addBody(phiz.Body.new(.static, .{
         .position = m.Vec2.new(0, 0),
-        .size = m.Vec2.new(collider_size, display_size_f32.y()),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size_f32.y()) } },
     }));
     // Right
     _ = try state.world.addBody(phiz.Body.new(.static, .{
         .position = m.Vec2.new(display_size_f32.x() - collider_size, 0),
-        .size = m.Vec2.new(collider_size, display_size_f32.y()),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size_f32.y()) } },
     }));
 
     // Add pillars.
@@ -67,21 +67,21 @@ fn setup(state: *State) !void {
     const pillar_size = 50;
     const pillar_half_size = pillar_size / 2;
     const pillar_offset = 50;
-    const pillar_size_vec = m.Vec2.new(pillar_size, pillar_size);
     const pillar_top_left = m.Vec2.new(display_half_size.x() - pillar_offset - pillar_half_size, display_half_size.y() - pillar_offset - pillar_half_size);
     const pillar_top_right = m.Vec2.new(display_half_size.x() + pillar_offset - pillar_half_size, display_half_size.y() - pillar_offset - pillar_half_size);
     const pillar_bottom_left = m.Vec2.new(display_half_size.x() - pillar_offset - pillar_half_size, display_half_size.y() + pillar_offset - pillar_half_size);
     const pillar_bottom_right = m.Vec2.new(display_half_size.x() + pillar_offset - pillar_half_size, display_half_size.y() + pillar_offset - pillar_half_size);
+    const pillar_shape = phiz.Body.Shape{ .rectangle = .{ .size = m.Vec2.new(pillar_size, pillar_size) } };
 
-    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = pillar_top_left, .size = pillar_size_vec }));
-    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = pillar_top_right, .size = pillar_size_vec }));
-    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = pillar_bottom_left, .size = pillar_size_vec }));
-    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = pillar_bottom_right, .size = pillar_size_vec }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = pillar_top_left, .shape = pillar_shape }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = pillar_top_right, .shape = pillar_shape }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = pillar_bottom_left, .shape = pillar_shape }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = pillar_bottom_right, .shape = pillar_shape }));
 
     // Add player.
     state.player = try state.world.addBody(phiz.Body.new(.dynamic, .{
-        .position = display_half_size.sub(m.Vec2.one().scale(25)),
-        .size = m.Vec2.new(50, 50),
+        .position = display_half_size,
+        .shape = .{ .circle = .{ .radius = 25 } },
     }));
     const player_body = state.world.getBody(state.player);
     player_body.damping = PLAYER_DAMPING;
@@ -113,7 +113,10 @@ fn input(state: *State) !void {
         const mouse_pos = rl.getMousePosition();
         _ = try state.world.addBody(phiz.Body.new(if (rl.isMouseButtonPressed(.left)) .dynamic else .static, .{
             .position = m.Vec2.new(mouse_pos.x, mouse_pos.y),
-            .size = m.Vec2.new(25, 25),
+            .shape = if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift))
+                .{ .circle = .{ .radius = 12.5 } }
+            else
+                .{ .rectangle = .{ .size = m.Vec2.new(25, 25) } },
         }));
     }
 
@@ -161,8 +164,8 @@ fn update(state: *State, dt: f32) !void {
             {
                 const movement = state.input.movement;
                 const is_diagonal_movement = movement.x() != 0 and movement.y() != 0;
-                // In case of diagonal movement, speed must be modulated by the diagonal
-                // factor to avoid diagonal movement being faster.
+                // In case of diagonal movement, speed must be modulated by the
+                // diagonal factor to avoid diagonal movement being faster.
                 const scaled_speed = PLAYER_SPEED * if (is_diagonal_movement) DIAGONAL_FACTOR else 1;
                 // Apply forces to the player body.
                 player_body.applyForce(state.input.movement.scale(scaled_speed));

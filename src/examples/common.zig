@@ -65,30 +65,51 @@ pub const State = struct {
 };
 
 pub fn renderBody(body: phiz.Body) void {
-    rl.drawRectangleV(
-        rl.Vector2.init(body.position.x(), body.position.y()),
-        rl.Vector2.init(body.size.x(), body.size.y()),
-        if (body.isDynamic()) rl.Color.blue else rl.Color.gray,
-    );
+    const color = if (body.isDynamic()) rl.Color.blue else rl.Color.gray;
+
+    switch (body.shape) {
+        .rectangle => |rect| {
+            rl.drawRectangleV(
+                rl.Vector2.init(body.position.x(), body.position.y()),
+                rl.Vector2.init(rect.size.x(), rect.size.y()),
+                color,
+            );
+        },
+        .circle => |circ| {
+            rl.drawCircleV(
+                rl.Vector2.init(body.position.x(), body.position.y()),
+                circ.radius,
+                color,
+            );
+        },
+    }
 }
 
 pub fn renderBodyDebug(body: phiz.Body, index: usize) void {
-    // Bounding box
-    const aabb = body.getAabb();
-    const aabb_pos = aabb.min;
-    const aabb_size = aabb.getSize();
-    rl.drawRectangleLinesEx(
-        rl.Rectangle.init(
-            aabb_pos.x(),
-            aabb_pos.y(),
-            aabb_size.x(),
-            aabb_size.y(),
-        ),
-        1,
-        rl.Color.red,
-    );
+    // Draw shape bounds.
+    switch (body.shape) {
+        .rectangle => |rect| {
+            rl.drawRectangleLinesEx(
+                rl.Rectangle.init(
+                    body.position.x(),
+                    body.position.y(),
+                    rect.size.x(),
+                    rect.size.y(),
+                ),
+                1,
+                rl.Color.red,
+            );
+        },
+        .circle => |circ| {
+            rl.drawCircleLinesV(
+                rl.Vector2.init(body.position.x(), body.position.y()),
+                circ.radius,
+                rl.Color.red,
+            );
+        },
+    }
 
-    // Center point
+    // Draw center point.
     const body_center = body.getCenter();
     rl.drawCircleV(
         rl.Vector2.init(body_center.x(), body_center.y()),
@@ -97,7 +118,7 @@ pub fn renderBodyDebug(body: phiz.Body, index: usize) void {
     );
 
     if (body.isDynamic()) {
-        // Velocity
+        // Draw velocity.
         const body_velocity = body.getCenter().add(body.velocity.scale(0.1));
         rl.drawLineV(
             rl.Vector2.init(body_center.x(), body_center.y()),
@@ -105,8 +126,8 @@ pub fn renderBodyDebug(body: phiz.Body, index: usize) void {
             rl.Color.red,
         );
 
-        // Collision normal
-        const half_size = aabb.getHalfSize();
+        // Draw collision normal.
+        const half_size = body.getAabb().getHalfSize();
         const direction = m.Vec2{ .data = std.math.sign(body.penetration.data) };
         const edge = body_center.add(direction.mul(half_size).negate());
         const normal = edge.add(direction.mul(half_size.scale(0.75)));
@@ -126,7 +147,7 @@ pub fn renderBodyDebug(body: phiz.Body, index: usize) void {
         }
     }
 
-    // Body index
+    // Draw body index.
     var text_buf: [8]u8 = undefined;
     const text = std.fmt.bufPrintZ(&text_buf, "{d}", .{index}) catch unreachable;
     const text_pos = body.position.add(m.Vec2.new(2, 1)).cast(i32);

@@ -2,6 +2,7 @@ const std = @import("std");
 const m = @import("m");
 const Body = @import("./Body.zig");
 const BodyId = @import("./BodyId.zig");
+const Circle = @import("./Circle.zig");
 const Collision = @import("./Collision.zig");
 
 /// Default gravity is more or less earth's gravity:
@@ -106,21 +107,51 @@ fn detectCollisions(self: *Self) !void {
             // Skip static vs static (should never happen anyway)
             if (body_a.isStatic() and body_b.isStatic()) continue;
 
-            const aabb_a = body_a.getAabb();
-            const aabb_b = body_b.getAabb();
+            // Detect collision based on shape types
+            const mtv = switch (body_a.shape) {
+                .rectangle => switch (body_b.shape) {
+                    .rectangle => blk: {
+                        const aabb_a = body_a.getAabb();
+                        const aabb_b = body_b.getAabb();
+                        break :blk aabb_a.getMtv(aabb_b);
+                    },
+                    .circle => |circ_b| blk: {
+                        const circle_b = Circle.new(body_b.getCenter(), circ_b.radius);
+                        const aabb_a = body_a.getAabb();
+                        // We want the MTV to move body_a away from body_b, so we negate circle_b's MTV.
+                        if (circle_b.getMtvWithAabb(aabb_a)) |mtv_result| {
+                            break :blk mtv_result.negate();
+                        }
+                        break :blk null;
+                    },
+                },
+                .circle => |circ_a| switch (body_b.shape) {
+                    .rectangle => blk: {
+                        const circle_a = Circle.new(body_a.getCenter(), circ_a.radius);
+                        const aabb_b = body_b.getAabb();
+                        // Circle.getMtvWithAabb already returns the MTV to move circle away from rectangle.
+                        break :blk circle_a.getMtvWithAabb(aabb_b);
+                    },
+                    .circle => |circ_b| blk: {
+                        const circle_a = Circle.new(body_a.getCenter(), circ_a.radius);
+                        const circle_b = Circle.new(body_b.getCenter(), circ_b.radius);
+                        break :blk circle_a.getMtv(circle_b);
+                    },
+                },
+            };
 
-            if (aabb_a.getMtv(aabb_b)) |mtv| {
+            if (mtv) |collision_mtv| {
                 const collision = Collision{
                     .type = Collision.determineType(body_a, body_b),
                     .body_a = BodyId.new(i),
                     .body_b = BodyId.new(j),
-                    .mtv = mtv,
-                    .normal = mtv.norm(),
+                    .mtv = collision_mtv,
+                    .normal = collision_mtv.norm(),
                 };
                 try self.collisions.append(self.allocator, collision);
                 // Store the penetration in both bodies.
-                body_a.accumulatePenetration(mtv);
-                body_b.accumulatePenetration(mtv.negate());
+                body_a.accumulatePenetration(collision_mtv);
+                body_b.accumulatePenetration(collision_mtv.negate());
             }
         }
     }
@@ -256,26 +287,32 @@ test "World.sortCollisions: should sort static collisions first" {
     const c4 = world.collisions.items[4];
     const c5 = world.collisions.items[5];
 
-    try std.testing.expect(c0.type == .dynamic_static);
-    try std.testing.expect(c1.type == .dynamic_static);
-    try std.testing.expect(c2.type == .dynamic_static);
-    try std.testing.expect(c3.type == .dynamic_dynamic);
-    try std.testing.expect(c4.type == .dynamic_dynamic);
-    try std.testing.expect(c5.type == .dynamic_dynamic);
+    try std.testing.expectEqual(.dynamic_static, c0.type);
+    try std.testing.expectEqual(.dynamic_static, c1.type);
+    try std.testing.expectEqual(.dynamic_static, c2.type);
+    try std.testing.expectEqual(.dynamic_dynamic, c3.type);
+    try std.testing.expectEqual(.dynamic_dynamic, c4.type);
+    try std.testing.expectEqual(.dynamic_dynamic, c5.type);
 }
 
 test "World.detectCollisions: Should detect collision between overlapping dynamic bodies" {
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body1_id = try world.addBody(Body.new(.dynamic, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(2, 2) }));
-    const body2_id = try world.addBody(Body.new(.dynamic, .{ .position = m.Vec2.new(1, 1), .size = m.Vec2.new(2, 2) }));
+    const body1_id = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+    const body2_id = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
     const body1 = world.getBody(body1_id);
     const body2 = world.getBody(body2_id);
 
     try world.detectCollisions();
 
-    try std.testing.expect(world.collisions.items.len == 1);
+    try std.testing.expectEqual(1, world.collisions.items.len);
     try std.testing.expectEqual(0, body1.penetration.x());
     try std.testing.expectEqual(-1, body1.penetration.y());
     try std.testing.expectEqual(0, body2.penetration.x());
@@ -286,44 +323,65 @@ test "World.detectCollisions: Should not detect collision between non-overlappin
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body1 = Body.new(.dynamic, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(2, 2) });
-    const body2 = Body.new(.dynamic, .{ .position = m.Vec2.new(3, 3), .size = m.Vec2.new(2, 2) });
+    const body1 = Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    });
+    const body2 = Body.new(.dynamic, .{
+        .position = m.Vec2.new(3, 3),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    });
 
     _ = try world.addBody(body1);
     _ = try world.addBody(body2);
 
     try world.detectCollisions();
-    try std.testing.expect(world.collisions.items.len == 0);
+    try std.testing.expectEqual(0, world.collisions.items.len);
 }
 
 test "World.detectCollisions: Should skip static vs static collisions" {
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body1 = Body.new(.static, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(2, 2) });
-    const body2 = Body.new(.static, .{ .position = m.Vec2.new(1, 1), .size = m.Vec2.new(2, 2) });
+    const body1 = Body.new(.static, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    });
+    const body2 = Body.new(.static, .{
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    });
 
     _ = try world.addBody(body1);
     _ = try world.addBody(body2);
 
     try world.detectCollisions();
-    try std.testing.expect(world.collisions.items.len == 0);
+    try std.testing.expectEqual(0, world.collisions.items.len);
 }
 
 test "World.detectCollisions: Should accumulate penetrations correctly (use deepest penetration on each axis)" {
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body1_id = try world.addBody(Body.new(.dynamic, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(4, 4) }));
-    const body2_id = try world.addBody(Body.new(.dynamic, .{ .position = m.Vec2.new(0, 2), .size = m.Vec2.new(4, 4) }));
-    const body3_id = try world.addBody(Body.new(.dynamic, .{ .position = m.Vec2.new(3, 0), .size = m.Vec2.new(2, 2) }));
+    const body1_id = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
+    }));
+    const body2_id = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 2),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
+    }));
+    const body3_id = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(3, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
     const body1 = world.getBody(body1_id);
     const body2 = world.getBody(body2_id);
     const body3 = world.getBody(body3_id);
 
     try world.detectCollisions();
 
-    try std.testing.expect(world.collisions.items.len == 2);
+    try std.testing.expectEqual(2, world.collisions.items.len);
     try std.testing.expectEqual(-1, body1.penetration.x());
     try std.testing.expectEqual(-2, body1.penetration.y());
     try std.testing.expectEqual(0, body2.penetration.x());
@@ -336,25 +394,121 @@ test "World.detectCollisions: Should classify collision types correctly" {
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const dynamic = Body.new(.dynamic, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(2, 2) });
-    const static = Body.new(.static, .{ .position = m.Vec2.new(1, 1), .size = m.Vec2.new(2, 2) });
+    const dynamic = Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    });
+    const static = Body.new(.static, .{
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    });
 
     _ = try world.addBody(dynamic);
     _ = try world.addBody(static);
 
     try world.detectCollisions();
 
-    try std.testing.expect(world.collisions.items.len == 1);
+    try std.testing.expectEqual(1, world.collisions.items.len);
     const collision = world.collisions.items[0];
-    try std.testing.expect(collision.type == .dynamic_static);
+    try std.testing.expectEqual(.dynamic_static, collision.type);
+}
+
+test "World.detectCollisions: Should detect circle vs circle collision" {
+    var world = World.init(std.testing.allocator, .{});
+    defer world.deinit();
+
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .circle = .{ .radius = 2 } },
+    }));
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(3, 0),
+        .shape = .{ .circle = .{ .radius = 2 } },
+    }));
+
+    try world.detectCollisions();
+
+    try std.testing.expectEqual(1, world.collisions.items.len);
+    const collision = world.collisions.items[0];
+    try std.testing.expectEqual(0, collision.body_a.index);
+    try std.testing.expectEqual(1, collision.body_b.index);
+    try std.testing.expectEqual(.dynamic_dynamic, collision.type);
+}
+
+test "World.detectCollisions: Should detect rectangle vs circle collision" {
+    var world = World.init(std.testing.allocator, .{});
+    defer world.deinit();
+
+    _ = try world.addBody(Body.new(.static, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
+    }));
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .circle = .{ .radius = 1.5 } },
+    }));
+
+    try world.detectCollisions();
+
+    try std.testing.expectEqual(1, world.collisions.items.len);
+    const collision = world.collisions.items[0];
+    try std.testing.expectEqual(0, collision.body_a.index);
+    try std.testing.expectEqual(1, collision.body_b.index);
+    try std.testing.expectEqual(.dynamic_static, collision.type);
+}
+
+test "World.detectCollisions: Should not detect non-overlapping circle vs rectangle" {
+    var world = World.init(std.testing.allocator, .{});
+    defer world.deinit();
+
+    _ = try world.addBody(Body.new(.static, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(5, 5),
+        .shape = .{ .circle = .{ .radius = 1 } },
+    }));
+
+    try world.detectCollisions();
+
+    try std.testing.expectEqual(0, world.collisions.items.len);
+}
+
+test "World.detectCollisions: Should produce consistent MTV directions" {
+    var world = World.init(std.testing.allocator, .{});
+    defer world.deinit();
+
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .circle = .{ .radius = 2 } },
+    }));
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(3, 0),
+        .shape = .{ .circle = .{ .radius = 2 } },
+    }));
+
+    try world.detectCollisions();
+
+    try std.testing.expectEqual(1, world.collisions.items.len);
+    const collision = world.collisions.items[0];
+    // MTV should push left circle further left (negative X direction).
+    try std.testing.expectEqual(-1, collision.mtv.x());
+    try std.testing.expectEqual(0, collision.mtv.y());
 }
 
 test "World.detectCollisions: Should resolve dynamic vs static collision" {
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const dynamic = Body.new(.dynamic, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(2, 2) });
-    const static = Body.new(.static, .{ .position = m.Vec2.new(1, 1), .size = m.Vec2.new(2, 2) });
+    const dynamic = Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    });
+    const static = Body.new(.static, .{
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    });
 
     _ = try world.addBody(dynamic);
     _ = try world.addBody(static);
@@ -372,8 +526,14 @@ test "World.resolveCollisions: Should resolve dynamic vs dynamic collision" {
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body1 = Body.new(.dynamic, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(2, 2) });
-    const body2 = Body.new(.dynamic, .{ .position = m.Vec2.new(1, 1), .size = m.Vec2.new(2, 2) });
+    const body1 = Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    });
+    const body2 = Body.new(.dynamic, .{
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    });
 
     _ = try world.addBody(body1);
     _ = try world.addBody(body2);
@@ -396,7 +556,10 @@ test "World.update: Should clamp velocity to terminal velocity" {
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const id = try world.addBody(Body.new(.dynamic, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(1, 1) }));
+    const id = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(1, 1) } },
+    }));
     var body = world.getBody(id);
     // Set a very high acceleration to test clamping.
     body.acceleration = m.Vec2.new(-10000, 10000);

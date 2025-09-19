@@ -45,40 +45,34 @@ fn setup(state: *State) !void {
     // Moving body
     _ = try state.world.addBody(phiz.Body.new(.dynamic, .{
         .position = m.Vec2.new(display_size_f32.x() - 100, 100),
-        .size = m.Vec2.new(50, 50),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(50, 50) } },
     }));
 
     // Ground
     _ = try state.world.addBody(phiz.Body.new(.static, .{
         .position = m.Vec2.new(0, display_size_f32.y() - collider_size),
-        .size = m.Vec2.new(display_size_f32.x(), collider_size),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(display_size_f32.x(), collider_size) } },
     }));
     // Left wall
     _ = try state.world.addBody(phiz.Body.new(.static, .{
         .position = m.Vec2.new(0, display_size_f32.y() / 2),
-        .size = m.Vec2.new(collider_size, display_size_f32.y() / 2),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size_f32.y() / 2) } },
     }));
     // Right wall
     _ = try state.world.addBody(phiz.Body.new(.static, .{
         .position = m.Vec2.new(display_size_f32.x() - collider_size, display_size_f32.y() / 2),
-        .size = m.Vec2.new(collider_size, display_size_f32.y() / 2),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size_f32.y() / 2) } },
     }));
 
-    // Low platform
-    _ = try state.world.addBody(phiz.Body.new(.static, .{
-        .position = m.Vec2.new(450, 450),
-        .size = m.Vec2.new(200, collider_size / 2),
-    }));
-    // High platform
-    _ = try state.world.addBody(phiz.Body.new(.static, .{
-        .position = m.Vec2.new(50, 300),
-        .size = m.Vec2.new(200, collider_size / 2),
-    }));
+    // Platforms
+    const platform_shape = phiz.Body.Shape{ .rectangle = .{ .size = m.Vec2.new(200, collider_size / 2) } };
+    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = m.Vec2.new(450, 450), .shape = platform_shape }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = m.Vec2.new(50, 300), .shape = platform_shape }));
 
     // Player
     state.player = try state.world.addBody(phiz.Body.new(.dynamic, .{
         .position = m.Vec2.new(100, 100),
-        .size = m.Vec2.new(25, 50),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(25, 50) } },
     }));
 }
 
@@ -104,11 +98,14 @@ fn input(state: *State) !void {
         state.debugger.frame_stepping_enabled = !state.debugger.frame_stepping_enabled;
     }
 
-    if (rl.isMouseButtonPressed(.left)) {
+    if (rl.isMouseButtonPressed(.left) or rl.isMouseButtonPressed(.right)) {
         const mouse_pos = rl.getMousePosition();
-        _ = try state.world.addBody(phiz.Body.new(.dynamic, .{
+        _ = try state.world.addBody(phiz.Body.new(if (rl.isMouseButtonPressed(.left)) .dynamic else .static, .{
             .position = m.Vec2.new(mouse_pos.x, mouse_pos.y),
-            .size = m.Vec2.new(25, 25),
+            .shape = if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift))
+                .{ .circle = .{ .radius = 12.5 } }
+            else
+                .{ .rectangle = .{ .size = m.Vec2.new(25, 25) } },
         }));
     }
 
@@ -117,13 +114,13 @@ fn input(state: *State) !void {
     }
 
     // Player movement
-    state.input.movement = if (rl.isKeyDown(.h) or rl.isKeyDown(.left))
+    state.input.movement = if (rl.isKeyDown(.h) or rl.isKeyDown(.a) or rl.isKeyDown(.left))
         m.Vec2.left()
-    else if (rl.isKeyDown(.j) or rl.isKeyDown(.down))
+    else if (rl.isKeyDown(.j) or rl.isKeyDown(.s) or rl.isKeyDown(.down))
         m.Vec2.down().negate()
-    else if (rl.isKeyDown(.k) or rl.isKeyDown(.up))
+    else if (rl.isKeyDown(.k) or rl.isKeyDown(.w) or rl.isKeyDown(.up))
         m.Vec2.up().negate()
-    else if (rl.isKeyDown(.l) or rl.isKeyDown(.right))
+    else if (rl.isKeyDown(.l) or rl.isKeyDown(.d) or rl.isKeyDown(.right))
         m.Vec2.right()
     else
         m.Vec2.zero();

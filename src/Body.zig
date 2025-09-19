@@ -6,9 +6,14 @@ pub const BodyType = enum {
     dynamic,
 };
 
+pub const Shape = union(enum) {
+    rectangle: struct { size: m.Vec2 },
+    circle: struct { radius: f32 },
+};
+
 pub const Config = struct {
     position: m.Vec2,
-    size: m.Vec2,
+    shape: Shape,
     mass: f32 = 1,
     damping: f32 = 0,
     restitution: f32 = 0,
@@ -18,7 +23,7 @@ const Self = @This();
 
 type: BodyType,
 position: m.Vec2,
-size: m.Vec2,
+shape: Shape,
 velocity: m.Vec2,
 acceleration: m.Vec2,
 damping: f32,
@@ -35,7 +40,7 @@ pub fn new(body_type: BodyType, config: Config) Self {
     return Self{
         .type = body_type,
         .position = config.position,
-        .size = config.size,
+        .shape = config.shape,
         .velocity = m.Vec2.zero(),
         .acceleration = m.Vec2.zero(),
         .damping = config.damping,
@@ -61,14 +66,23 @@ pub fn isDynamic(self: Self) bool {
 }
 
 pub fn getAabb(self: Self) Aabb {
-    return Aabb{
-        .min = self.position,
-        .max = self.position.add(self.size),
+    return switch (self.shape) {
+        .rectangle => |rect| Aabb{
+            .min = self.position,
+            .max = self.position.add(rect.size),
+        },
+        .circle => |circ| Aabb{
+            .min = self.position.sub(m.Vec2.new(circ.radius, circ.radius)),
+            .max = self.position.add(m.Vec2.new(circ.radius, circ.radius)),
+        },
     };
 }
 
 pub fn getCenter(self: Self) m.Vec2 {
-    return self.position.add(self.size.scale(0.5));
+    return switch (self.shape) {
+        .rectangle => |rect| self.position.add(rect.size.scale(0.5)),
+        .circle => |_| self.position,
+    };
 }
 
 pub fn setMass(self: *Self, value: f32) void {
