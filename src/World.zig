@@ -41,27 +41,13 @@ pub const DEFAULT_TERMINAL_VELOCITY: f32 = 1000;
 /// Default fixed timestep for physics simulation.
 pub const DEFAULT_FIXED_TIMESTEP: f32 = 1.0 / 60.0;
 
-pub const TimestepMode = enum {
-    /// Use a fixed timestep for physics (recommended).
-    /// This will run the physics simulation every `fixed_timestep` seconds,
-    /// which makes it consistent accross frame rates.
-    fixed,
-    /// Use a variable timestep for physics.
-    /// This will run the physics simulation every frame.
-    variable,
-};
-
 pub const Config = struct {
-    timestep_mode: TimestepMode = .fixed,
-    fixed_timestep: f32 = DEFAULT_FIXED_TIMESTEP,
     gravity: m.Vec2 = DEFAULT_GRAVITY,
     terminal_velocity: f32 = DEFAULT_TERMINAL_VELOCITY,
     sub_steps: usize = 8,
 };
 
 allocator: std.mem.Allocator,
-timestep_mode: TimestepMode,
-fixed_timestep: f32,
 gravity: m.Vec2,
 terminal_velocity: f32,
 sub_steps: usize,
@@ -72,8 +58,6 @@ collisions: std.ArrayList(Collision),
 pub fn init(allocator: std.mem.Allocator, config: Config) Self {
     return Self{
         .allocator = allocator,
-        .timestep_mode = config.timestep_mode,
-        .fixed_timestep = config.fixed_timestep,
         .gravity = config.gravity,
         .terminal_velocity = config.terminal_velocity,
         .sub_steps = config.sub_steps,
@@ -88,45 +72,33 @@ pub fn deinit(self: *Self) void {
     self.collisions.deinit(self.allocator);
 }
 
-pub fn update(self: *Self, dt: f32) !void {
-    // Accumulate delta time for the physics step to consume.
-    self.dt_accumulator += dt;
-    // Calculate physics timestep and substep.
-    const timestep = if (self.timestep_mode == .variable) dt else self.fixed_timestep;
+pub fn update(self: *Self, timestep: f32) !void {
     const substep = timestep / @as(f32, @floatFromInt(self.sub_steps));
 
-    // Apply gravity.
+    // Apply forces.
     for (self.bodies.items) |*body| {
+        // Reset penetration from previous physics step.
+        body.penetration = m.Vec2.zero();
+        // Apply gravity and accelerate.
         body.applyForce(self.gravity.scale(body.mass));
+        body.accelerate(timestep);
     }
 
-    // Physis step: Run integration and collision detection.
-    while (timestep > 0 and self.dt_accumulator >= timestep) {
-        self.dt_accumulator -= timestep;
-
-        // Acceleration.
+    // Integration and collision detection.
+    for (0..self.sub_steps) |_| {
+        // Integrate bodies.
         for (self.bodies.items) |*body| {
-            // Reset penetration from previous physics step.
-            body.penetration = m.Vec2.zero();
-            body.accelerate(timestep);
+            body.integrate(substep);
         }
 
-        // Integration and collision detection.
-        for (0..self.sub_steps) |_| {
-            // Integrate bodies.
-            for (self.bodies.items) |*body| {
-                body.integrate(substep);
-            }
+        // Detect and resolve collisions.
+        try self.detectCollisions();
+        self.resolveCollisions();
 
-            // Detect and resolve collisions.
-            try self.detectCollisions();
-            self.resolveCollisions();
-
-            // Account for floating point inaccuracies.
-            for (self.bodies.items) |*body| {
-                if (body.velocity.length() < 0.1) {
-                    body.velocity = m.Vec2.zero();
-                }
+        // Account for floating point inaccuracies.
+        for (self.bodies.items) |*body| {
+            if (body.velocity.length() < 0.1) {
+                body.velocity = m.Vec2.zero();
             }
         }
     }

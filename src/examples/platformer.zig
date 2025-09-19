@@ -6,17 +6,19 @@ const common = @import("./common.zig");
 const State = common.State;
 
 const DISPLAY_SIZE = m.Vec2_i32.new(800, 600);
+const TARGET_FPS = 60;
+const PHYSICS_TIMESTEP: f32 = 1.0 / 60.0;
 const PLAYER_SPEED_GROUND = 900;
 const PLAYER_SPEED_AIR = 300;
 const PLAYER_DAMPING_GROUND = 3.5;
-const PLAYER_DAMPING_AIR = 0.5;
+const PLAYER_DAMPING_AIR = 0;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    rl.setTargetFPS(60);
+    rl.setTargetFPS(TARGET_FPS);
     rl.setConfigFlags(.{ .window_highdpi = true });
     rl.initWindow(DISPLAY_SIZE.x(), DISPLAY_SIZE.y(), "phiz example: platformer");
     defer rl.closeWindow();
@@ -122,7 +124,7 @@ fn input(state: *State) !void {
     }
 
     // Player movement
-    const movement = if (rl.isKeyDown(.h) or rl.isKeyDown(.left))
+    state.input.movement = if (rl.isKeyDown(.h) or rl.isKeyDown(.left))
         m.Vec2.left()
     else if (rl.isKeyDown(.j) or rl.isKeyDown(.down))
         m.Vec2.down().negate()
@@ -133,27 +135,28 @@ fn input(state: *State) !void {
     else
         m.Vec2.zero();
 
-    const player = state.world.getBody(state.player);
-    const speed: f32 = if (bodyIsGrounded(player)) PLAYER_SPEED_GROUND else PLAYER_SPEED_AIR;
-    player.applyForce(movement.scale(speed));
-
-    // Jump
-    if (bodyIsGrounded(player) and rl.isKeyPressed(.space)) {
-        player.applyImpulse(m.Vec2.new(0, -700));
-    }
+    // Player jump
+    state.input.jump = rl.isKeyPressed(.space);
 }
 
 fn update(state: *State, dt: f32) !void {
     if (state.physics_enabled) {
+        state.accumulator += dt;
         const moving_body = state.world.getBody(phiz.BodyId.new(0));
-        moving_body.applyForce(m.Vec2.new(-100, 0));
         const player_body = state.world.getBody(state.player);
-        if (player_body.penetration.y() < 0) {
-            player_body.damping = PLAYER_DAMPING_GROUND;
-        } else {
-            player_body.damping = PLAYER_DAMPING_AIR;
+        while (state.accumulator >= PHYSICS_TIMESTEP) {
+            state.accumulator -= PHYSICS_TIMESTEP;
+            // Apply force to the moving body.
+            moving_body.applyForce(m.Vec2.new(-100, 0));
+            // Apply forces to the player body.
+            const player_speed: f32 = if (bodyIsGrounded(player_body)) PLAYER_SPEED_GROUND else PLAYER_SPEED_AIR;
+            player_body.applyForce(state.input.movement.scale(player_speed));
+            if (state.input.jump and bodyIsGrounded(player_body)) {
+                player_body.applyImpulse(m.Vec2.new(0, -700));
+            }
+            // Update physics.
+            try state.world.update(PHYSICS_TIMESTEP);
         }
-        try state.world.update(dt);
     }
 }
 

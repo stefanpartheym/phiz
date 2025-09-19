@@ -28,19 +28,32 @@ pub const State = struct {
         }
     };
 
+    const Input = struct {
+        pub const init = @This(){
+            .movement = m.Vec2.zero(),
+            .jump = false,
+        };
+        movement: m.Vec2,
+        jump: bool,
+    };
+
     const Self = @This();
 
     running: bool,
-    debugger: Debugger,
     physics_enabled: bool,
+    accumulator: f32,
+    input: Input,
+    debugger: Debugger,
     world: phiz.World,
     player: phiz.BodyId,
 
     pub fn init(allocator: std.mem.Allocator, physics_config: phiz.World.Config) Self {
         return Self{
             .running = true,
-            .debugger = Debugger.init,
             .physics_enabled = true,
+            .accumulator = 0,
+            .input = Input.init,
+            .debugger = Debugger.init,
             .world = phiz.World.init(allocator, physics_config),
             .player = undefined,
         };

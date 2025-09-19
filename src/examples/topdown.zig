@@ -6,16 +6,18 @@ const common = @import("./common.zig");
 const State = common.State;
 
 const DISPLAY_SIZE = m.Vec2_i32.new(800, 600);
+const TARGET_FPS = 60;
+const PHYSICS_TIMESTEP: f32 = 1.0 / 60.0;
+const DIAGONAL_FACTOR: f32 = 1.0 / @sqrt(@as(f32, 2));
 const PLAYER_SPEED = 900;
 const PLAYER_DAMPING = 3.5;
-const DIAGONAL_FACTOR: f32 = 1 / @sqrt(@as(f32, 2));
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    rl.setTargetFPS(60);
+    rl.setTargetFPS(TARGET_FPS);
     rl.setConfigFlags(.{ .window_highdpi = true });
     rl.initWindow(DISPLAY_SIZE.x(), DISPLAY_SIZE.y(), "phiz example: top-down");
     defer rl.closeWindow();
@@ -85,8 +87,6 @@ fn setup(state: *State) !void {
         display_half_size.sub(m.Vec2.one().scale(25)),
         m.Vec2.new(50, 50),
     ));
-    const player_body = state.world.getBody(state.player);
-    player_body.damping = PLAYER_DAMPING;
 }
 
 fn reset(state: *State) !void {
@@ -164,7 +164,15 @@ fn input(state: *State) !void {
 
 fn update(state: *State, dt: f32) !void {
     if (state.physics_enabled) {
-        try state.world.update(dt);
+        state.accumulator += dt;
+        const player_body = state.world.getBody(state.player);
+        while (state.accumulator >= PHYSICS_TIMESTEP) {
+            state.accumulator -= PHYSICS_TIMESTEP;
+            // Apply forces to the player body.
+            player_body.applyForce(state.input.movement.scale(PLAYER_SPEED));
+            // Update physics.
+            try state.world.update(PHYSICS_TIMESTEP);
+        }
     }
 }
 
