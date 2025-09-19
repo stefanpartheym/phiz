@@ -44,13 +44,11 @@ pub const DEFAULT_FIXED_TIMESTEP: f32 = 1.0 / 60.0;
 pub const Config = struct {
     gravity: m.Vec2 = DEFAULT_GRAVITY,
     terminal_velocity: f32 = DEFAULT_TERMINAL_VELOCITY,
-    sub_steps: usize = 8,
 };
 
 allocator: std.mem.Allocator,
 gravity: m.Vec2,
 terminal_velocity: f32,
-sub_steps: usize,
 dt_accumulator: f32,
 bodies: std.ArrayList(Body),
 collisions: std.ArrayList(Collision),
@@ -60,7 +58,6 @@ pub fn init(allocator: std.mem.Allocator, config: Config) Self {
         .allocator = allocator,
         .gravity = config.gravity,
         .terminal_velocity = config.terminal_velocity,
-        .sub_steps = config.sub_steps,
         .dt_accumulator = 0,
         .bodies = std.ArrayList(Body){},
         .collisions = std.ArrayList(Collision){},
@@ -72,8 +69,8 @@ pub fn deinit(self: *Self) void {
     self.collisions.deinit(self.allocator);
 }
 
-pub fn update(self: *Self, timestep: f32) !void {
-    const substep = timestep / @as(f32, @floatFromInt(self.sub_steps));
+pub fn update(self: *Self, timestep: f32, substeps: usize) !void {
+    const substep = timestep / @as(f32, @floatFromInt(substeps));
 
     // Apply forces.
     for (self.bodies.items) |*body| {
@@ -86,7 +83,7 @@ pub fn update(self: *Self, timestep: f32) !void {
     }
 
     // Integration and collision detection.
-    for (0..self.sub_steps) |_| {
+    for (0..substeps) |_| {
         // Integrate bodies.
         for (self.bodies.items) |*body| {
             body.integrate(substep);
@@ -408,7 +405,7 @@ test "World.update: Should clamp velocity to terminal velocity" {
     var body = world.getBody(id);
     // Set a very high acceleration to test clamping.
     body.acceleration = m.Vec2.new(-10000, 10000);
-    try world.update(1);
+    try world.update(1, 1);
 
     try std.testing.expect(body.velocity.x() <= world.terminal_velocity);
     try std.testing.expect(body.velocity.x() >= -world.terminal_velocity);

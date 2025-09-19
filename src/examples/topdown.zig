@@ -8,6 +8,7 @@ const State = common.State;
 const DISPLAY_SIZE = m.Vec2_i32.new(800, 600);
 const TARGET_FPS = 60;
 const PHYSICS_TIMESTEP: f32 = 1.0 / 60.0;
+const PHYSICS_SUBSTEPS = 4;
 const DIAGONAL_FACTOR: f32 = 1.0 / @sqrt(@as(f32, 2));
 const PLAYER_SPEED = 1000;
 const PLAYER_DAMPING = 5;
@@ -173,7 +174,7 @@ fn update(state: *State, dt: f32) !void {
                 player_body.applyForce(state.input.movement.scale(scaled_speed));
             }
             // Update physics.
-            try state.world.update(PHYSICS_TIMESTEP);
+            try state.world.update(PHYSICS_TIMESTEP, PHYSICS_SUBSTEPS);
         }
     }
 }
