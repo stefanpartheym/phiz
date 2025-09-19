@@ -1,36 +1,8 @@
 const std = @import("std");
 const m = @import("m");
 const Body = @import("./Body.zig");
-
-const Self = @This();
-
-pub const BodyId = struct {
-    index: usize,
-    pub fn new(index: usize) @This() {
-        return @This(){ .index = index };
-    }
-};
-
-const Collision = struct {
-    type: CollisionType,
-    body_a: BodyId,
-    body_b: BodyId,
-    mtv: m.Vec2,
-    normal: m.Vec2,
-
-    pub fn determineType(body_a: *const Body, body_b: *const Body) CollisionType {
-        if (body_a.isStatic() or body_b.isStatic()) {
-            return .dynamic_static;
-        } else {
-            return .dynamic_dynamic;
-        }
-    }
-};
-
-const CollisionType = enum {
-    dynamic_static,
-    dynamic_dynamic,
-};
+const BodyId = @import("./BodyId.zig");
+const Collision = @import("./Collision.zig");
 
 /// Default gravity is more or less earth's gravity:
 ///   g = 9.81 m/s²
@@ -45,6 +17,8 @@ pub const Config = struct {
     gravity: m.Vec2 = DEFAULT_GRAVITY,
     terminal_velocity: f32 = DEFAULT_TERMINAL_VELOCITY,
 };
+
+const Self = @This();
 
 allocator: std.mem.Allocator,
 gravity: m.Vec2,
@@ -230,7 +204,7 @@ const World = Self;
 
 /// Function to create a collision with the specified type.
 /// Do not use this for actual collision detection.
-fn mockCollisionType(collision_type: CollisionType) Collision {
+fn mockCollisionType(collision_type: Collision.Type) Collision {
     return Collision{
         .type = collision_type,
         .body_a = undefined,
