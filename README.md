@@ -2,6 +2,8 @@
 
 > A very basic 2D physics engine written in the [Zig programming language](https://ziglang.org).
 
+![2D platformer physics example](./media/platformer.gif)
+
 ## Motivation
 
 The goal is to provide a very basic physics solution for simple 2D games, eliminating the need to reimplement basic collision detection from scratch for every project. The main focus is on essential 2D collision detection and resolution without the complexity of a full physics simulation.
@@ -42,6 +44,8 @@ zig build run-platformer
 This example demonstrates the use of gravity and a simple player controller for side-scrolling platformers.
 Damping is used with two different values based on the player being on the ground or in the air.
 This ensures the player will fall naturally due to gravity, but will gradually decelerate while being on the ground.
+
+In this example, you can see, how stacking multiple boxes on top of each other is still very unstable and causes jitting.
 
 ### Top-down
 
