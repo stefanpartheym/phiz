@@ -174,7 +174,7 @@ fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) void {
     const body_a = self.getBody(collision.body_a);
     const body_b = self.getBody(collision.body_b);
 
-    // Claculate position correction:
+    // Position correction:
     // Weight corrections based on the velocity of eacht body.
     // Bodies moving faster into the collision should get pushed back more.
     const speed_a = @abs(body_a.velocity.dot(collision.normal));
@@ -188,7 +188,6 @@ fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) void {
         }
     else
         .{ .a = half_mtv, .b = half_mtv };
-
     // Apply position corrections.
     body_a.position = body_a.position.add(corrections.a);
     body_b.position = body_b.position.sub(corrections.b);
@@ -197,16 +196,24 @@ fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) void {
     // Calculate relative velocity along collision normal.
     const relative_velocity = body_a.velocity.sub(body_b.velocity);
     const velocity_along_normal = relative_velocity.dot(collision.normal);
-
     // Only resolve velocity if bodies are moving towards each other.
     if (velocity_along_normal < 0) {
-        // Remove velocity components along collision normal for fully inelastic collisions.
-        const velocity_a_along_normal = body_a.velocity.dot(collision.normal);
-        const velocity_b_along_normal = body_b.velocity.dot(collision.normal);
-
-        // Remove normal velocity components from both bodies
-        body_a.velocity = body_a.velocity.sub(collision.normal.scale(velocity_a_along_normal));
-        body_b.velocity = body_b.velocity.sub(collision.normal.scale(velocity_b_along_normal));
+        // Calculate combined restitution (minimum of both bodies)
+        const restitution = @min(body_a.restitution, body_b.restitution);
+        if (restitution == 0) {
+            // Fully inelastic collision: zero out velocities along normal
+            const velocity_a_along_normal = body_a.velocity.dot(collision.normal);
+            const velocity_b_along_normal = body_b.velocity.dot(collision.normal);
+            body_a.velocity = body_a.velocity.sub(collision.normal.scale(velocity_a_along_normal));
+            body_b.velocity = body_b.velocity.sub(collision.normal.scale(velocity_b_along_normal));
+        } else {
+            // Elastic collision: conserve momentum with restitution
+            const impulse_magnitude = -(1 + restitution) * velocity_along_normal / (body_a.inv_mass + body_b.inv_mass);
+            const impulse = collision.normal.scale(impulse_magnitude);
+            // Apply equal and opposite impulses
+            body_a.velocity = body_a.velocity.add(impulse.scale(body_a.inv_mass));
+            body_b.velocity = body_b.velocity.sub(impulse.scale(body_b.inv_mass));
+        }
     }
 }
 
@@ -261,8 +268,8 @@ test "World.detectCollisions: Should detect collision between overlapping dynami
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body1_id = try world.addBody(Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2)));
-    const body2_id = try world.addBody(Body.new(.dynamic, m.Vec2.new(1, 1), m.Vec2.new(2, 2)));
+    const body1_id = try world.addBody(Body.new(.dynamic, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(2, 2) }));
+    const body2_id = try world.addBody(Body.new(.dynamic, .{ .position = m.Vec2.new(1, 1), .size = m.Vec2.new(2, 2) }));
     const body1 = world.getBody(body1_id);
     const body2 = world.getBody(body2_id);
 
@@ -279,8 +286,8 @@ test "World.detectCollisions: Should not detect collision between non-overlappin
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body1 = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
-    const body2 = Body.new(.dynamic, m.Vec2.new(3, 3), m.Vec2.new(2, 2));
+    const body1 = Body.new(.dynamic, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(2, 2) });
+    const body2 = Body.new(.dynamic, .{ .position = m.Vec2.new(3, 3), .size = m.Vec2.new(2, 2) });
 
     _ = try world.addBody(body1);
     _ = try world.addBody(body2);
@@ -293,8 +300,8 @@ test "World.detectCollisions: Should skip static vs static collisions" {
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body1 = Body.new(.static, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
-    const body2 = Body.new(.static, m.Vec2.new(1, 1), m.Vec2.new(2, 2));
+    const body1 = Body.new(.static, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(2, 2) });
+    const body2 = Body.new(.static, .{ .position = m.Vec2.new(1, 1), .size = m.Vec2.new(2, 2) });
 
     _ = try world.addBody(body1);
     _ = try world.addBody(body2);
@@ -307,9 +314,9 @@ test "World.detectCollisions: Should accumulate penetrations correctly (use deep
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body1_id = try world.addBody(Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(4, 4)));
-    const body2_id = try world.addBody(Body.new(.dynamic, m.Vec2.new(0, 2), m.Vec2.new(4, 4)));
-    const body3_id = try world.addBody(Body.new(.dynamic, m.Vec2.new(3, 0), m.Vec2.new(2, 2)));
+    const body1_id = try world.addBody(Body.new(.dynamic, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(4, 4) }));
+    const body2_id = try world.addBody(Body.new(.dynamic, .{ .position = m.Vec2.new(0, 2), .size = m.Vec2.new(4, 4) }));
+    const body3_id = try world.addBody(Body.new(.dynamic, .{ .position = m.Vec2.new(3, 0), .size = m.Vec2.new(2, 2) }));
     const body1 = world.getBody(body1_id);
     const body2 = world.getBody(body2_id);
     const body3 = world.getBody(body3_id);
@@ -329,8 +336,8 @@ test "World.detectCollisions: Should classify collision types correctly" {
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const dynamic = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
-    const static = Body.new(.static, m.Vec2.new(1, 1), m.Vec2.new(2, 2));
+    const dynamic = Body.new(.dynamic, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(2, 2) });
+    const static = Body.new(.static, .{ .position = m.Vec2.new(1, 1), .size = m.Vec2.new(2, 2) });
 
     _ = try world.addBody(dynamic);
     _ = try world.addBody(static);
@@ -346,8 +353,8 @@ test "World.detectCollisions: Should resolve dynamic vs static collision" {
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const dynamic = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
-    const static = Body.new(.static, m.Vec2.new(1, 1), m.Vec2.new(2, 2));
+    const dynamic = Body.new(.dynamic, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(2, 2) });
+    const static = Body.new(.static, .{ .position = m.Vec2.new(1, 1), .size = m.Vec2.new(2, 2) });
 
     _ = try world.addBody(dynamic);
     _ = try world.addBody(static);
@@ -365,8 +372,8 @@ test "World.resolveCollisions: Should resolve dynamic vs dynamic collision" {
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body1 = Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(2, 2));
-    const body2 = Body.new(.dynamic, m.Vec2.new(1, 1), m.Vec2.new(2, 2));
+    const body1 = Body.new(.dynamic, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(2, 2) });
+    const body2 = Body.new(.dynamic, .{ .position = m.Vec2.new(1, 1), .size = m.Vec2.new(2, 2) });
 
     _ = try world.addBody(body1);
     _ = try world.addBody(body2);
@@ -389,7 +396,7 @@ test "World.update: Should clamp velocity to terminal velocity" {
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const id = try world.addBody(Body.new(.dynamic, m.Vec2.new(0, 0), m.Vec2.new(1, 1)));
+    const id = try world.addBody(Body.new(.dynamic, .{ .position = m.Vec2.new(0, 0), .size = m.Vec2.new(1, 1) }));
     var body = world.getBody(id);
     // Set a very high acceleration to test clamping.
     body.acceleration = m.Vec2.new(-10000, 10000);

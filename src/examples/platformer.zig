@@ -43,50 +43,43 @@ fn setup(state: *State) !void {
     const display_size_f32 = DISPLAY_SIZE.cast(f32);
     const collider_size = 20;
     // Moving body
-    _ = try state.world.addBody(phiz.Body.new(
-        .dynamic,
-        m.Vec2.new(display_size_f32.x() - 100, 100),
-        m.Vec2.new(50, 50),
-    ));
+    _ = try state.world.addBody(phiz.Body.new(.dynamic, .{
+        .position = m.Vec2.new(display_size_f32.x() - 100, 100),
+        .size = m.Vec2.new(50, 50),
+    }));
 
     // Ground
-    _ = try state.world.addBody(phiz.Body.new(
-        .static,
-        m.Vec2.new(0, display_size_f32.y() - collider_size),
-        m.Vec2.new(display_size_f32.x(), collider_size),
-    ));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(0, display_size_f32.y() - collider_size),
+        .size = m.Vec2.new(display_size_f32.x(), collider_size),
+    }));
     // Left wall
-    _ = try state.world.addBody(phiz.Body.new(
-        .static,
-        m.Vec2.new(0, display_size_f32.y() / 2),
-        m.Vec2.new(collider_size, display_size_f32.y() / 2),
-    ));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(0, display_size_f32.y() / 2),
+        .size = m.Vec2.new(collider_size, display_size_f32.y() / 2),
+    }));
     // Right wall
-    _ = try state.world.addBody(phiz.Body.new(
-        .static,
-        m.Vec2.new(display_size_f32.x() - collider_size, display_size_f32.y() / 2),
-        m.Vec2.new(collider_size, display_size_f32.y() / 2),
-    ));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(display_size_f32.x() - collider_size, display_size_f32.y() / 2),
+        .size = m.Vec2.new(collider_size, display_size_f32.y() / 2),
+    }));
 
     // Low platform
-    _ = try state.world.addBody(phiz.Body.new(
-        .static,
-        m.Vec2.new(450, 450),
-        m.Vec2.new(200, collider_size / 2),
-    ));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(450, 450),
+        .size = m.Vec2.new(200, collider_size / 2),
+    }));
     // High platform
-    _ = try state.world.addBody(phiz.Body.new(
-        .static,
-        m.Vec2.new(50, 300),
-        m.Vec2.new(200, collider_size / 2),
-    ));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(50, 300),
+        .size = m.Vec2.new(200, collider_size / 2),
+    }));
 
     // Player
-    state.player = try state.world.addBody(phiz.Body.new(
-        .dynamic,
-        m.Vec2.new(100, 100),
-        m.Vec2.new(25, 50),
-    ));
+    state.player = try state.world.addBody(phiz.Body.new(.dynamic, .{
+        .position = m.Vec2.new(100, 100),
+        .size = m.Vec2.new(25, 50),
+    }));
 }
 
 fn reset(state: *State) !void {
@@ -113,11 +106,10 @@ fn input(state: *State) !void {
 
     if (rl.isMouseButtonPressed(.left)) {
         const mouse_pos = rl.getMousePosition();
-        _ = try state.world.addBody(phiz.Body.new(
-            .dynamic,
-            m.Vec2.new(mouse_pos.x, mouse_pos.y),
-            m.Vec2.new(25, 25),
-        ));
+        _ = try state.world.addBody(phiz.Body.new(.dynamic, .{
+            .position = m.Vec2.new(mouse_pos.x, mouse_pos.y),
+            .size = m.Vec2.new(25, 25),
+        }));
     }
 
     if (rl.isKeyPressed(.enter)) {

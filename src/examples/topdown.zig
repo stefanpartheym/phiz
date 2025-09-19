@@ -42,29 +42,25 @@ fn setup(state: *State) !void {
     const display_size_f32: m.Vec2 = DISPLAY_SIZE.cast(f32);
     const collider_size = 20;
     // Top
-    _ = try state.world.addBody(phiz.Body.new(
-        .static,
-        m.Vec2.new(0, 0),
-        m.Vec2.new(display_size_f32.x(), collider_size),
-    ));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(0, 0),
+        .size = m.Vec2.new(display_size_f32.x(), collider_size),
+    }));
     // Bottom
-    _ = try state.world.addBody(phiz.Body.new(
-        .static,
-        m.Vec2.new(0, display_size_f32.y() - collider_size),
-        m.Vec2.new(display_size_f32.x(), collider_size),
-    ));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(0, display_size_f32.y() - collider_size),
+        .size = m.Vec2.new(display_size_f32.x(), collider_size),
+    }));
     // Left
-    _ = try state.world.addBody(phiz.Body.new(
-        .static,
-        m.Vec2.new(0, 0),
-        m.Vec2.new(collider_size, display_size_f32.y()),
-    ));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(0, 0),
+        .size = m.Vec2.new(collider_size, display_size_f32.y()),
+    }));
     // Right
-    _ = try state.world.addBody(phiz.Body.new(
-        .static,
-        m.Vec2.new(display_size_f32.x() - collider_size, 0),
-        m.Vec2.new(collider_size, display_size_f32.y()),
-    ));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(display_size_f32.x() - collider_size, 0),
+        .size = m.Vec2.new(collider_size, display_size_f32.y()),
+    }));
 
     // Add pillars.
     const display_half_size = display_size_f32.scale(0.5);
@@ -77,17 +73,16 @@ fn setup(state: *State) !void {
     const pillar_bottom_left = m.Vec2.new(display_half_size.x() - pillar_offset - pillar_half_size, display_half_size.y() + pillar_offset - pillar_half_size);
     const pillar_bottom_right = m.Vec2.new(display_half_size.x() + pillar_offset - pillar_half_size, display_half_size.y() + pillar_offset - pillar_half_size);
 
-    _ = try state.world.addBody(phiz.Body.new(.static, pillar_top_left, pillar_size_vec));
-    _ = try state.world.addBody(phiz.Body.new(.static, pillar_top_right, pillar_size_vec));
-    _ = try state.world.addBody(phiz.Body.new(.static, pillar_bottom_left, pillar_size_vec));
-    _ = try state.world.addBody(phiz.Body.new(.static, pillar_bottom_right, pillar_size_vec));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = pillar_top_left, .size = pillar_size_vec }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = pillar_top_right, .size = pillar_size_vec }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = pillar_bottom_left, .size = pillar_size_vec }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = pillar_bottom_right, .size = pillar_size_vec }));
 
     // Add player.
-    state.player = try state.world.addBody(phiz.Body.new(
-        .dynamic,
-        display_half_size.sub(m.Vec2.one().scale(25)),
-        m.Vec2.new(50, 50),
-    ));
+    state.player = try state.world.addBody(phiz.Body.new(.dynamic, .{
+        .position = display_half_size.sub(m.Vec2.one().scale(25)),
+        .size = m.Vec2.new(50, 50),
+    }));
     const player_body = state.world.getBody(state.player);
     player_body.damping = PLAYER_DAMPING;
 }
@@ -116,11 +111,10 @@ fn input(state: *State) !void {
 
     if (rl.isMouseButtonPressed(.left) or rl.isMouseButtonPressed(.right)) {
         const mouse_pos = rl.getMousePosition();
-        _ = try state.world.addBody(phiz.Body.new(
-            if (rl.isMouseButtonPressed(.left)) .dynamic else .static,
-            m.Vec2.new(mouse_pos.x, mouse_pos.y),
-            m.Vec2.new(25, 25),
-        ));
+        _ = try state.world.addBody(phiz.Body.new(if (rl.isMouseButtonPressed(.left)) .dynamic else .static, .{
+            .position = m.Vec2.new(mouse_pos.x, mouse_pos.y),
+            .size = m.Vec2.new(25, 25),
+        }));
     }
 
     if (rl.isKeyPressed(.enter)) {

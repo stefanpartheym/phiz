@@ -1,13 +1,20 @@
 const m = @import("m");
-
 const Aabb = @import("./Aabb.zig");
-
-const Self = @This();
 
 pub const BodyType = enum {
     static,
     dynamic,
 };
+
+pub const Config = struct {
+    position: m.Vec2,
+    size: m.Vec2,
+    mass: f32 = 1,
+    damping: f32 = 0,
+    restitution: f32 = 0,
+};
+
+const Self = @This();
 
 type: BodyType,
 position: m.Vec2,
@@ -17,26 +24,30 @@ acceleration: m.Vec2,
 damping: f32,
 mass: f32,
 inv_mass: f32,
+/// Coefficient of restitution:
+/// - 0 = fully inelastic (stop)
+/// - 1 = fully elastic (bounce)
+restitution: f32,
 /// Contains the deepest penetration caused by collisions on each axis.
 penetration: m.Vec2,
 
-pub fn new(body_type: BodyType, position: m.Vec2, size: m.Vec2) Self {
-    const default_mass = 1;
+pub fn new(body_type: BodyType, config: Config) Self {
     return Self{
         .type = body_type,
-        .position = position,
-        .size = size,
+        .position = config.position,
+        .size = config.size,
         .velocity = m.Vec2.zero(),
         .acceleration = m.Vec2.zero(),
-        .damping = 0,
+        .damping = config.damping,
         .mass = switch (body_type) {
             .static => 0,
-            .dynamic => default_mass,
+            .dynamic => config.mass,
         },
         .inv_mass = switch (body_type) {
             .static => 0,
-            .dynamic => 1 / default_mass,
+            .dynamic => 1 / config.mass,
         },
+        .restitution = config.restitution,
         .penetration = m.Vec2.zero(),
     };
 }
