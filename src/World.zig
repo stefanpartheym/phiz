@@ -174,13 +174,27 @@ fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) void {
     const body_a = self.getBody(collision.body_a);
     const body_b = self.getBody(collision.body_b);
 
-    // Position correction: Split the MTV equally between both bodies.
-    // Assuming the MTV points from body_b to body_a.
+    // Claculate position correction:
+    // Weight corrections based on the velocity of eacht body.
+    // Bodies moving faster into the collision should get pushed back more.
+    const speed_a = @abs(body_a.velocity.dot(collision.normal));
+    const speed_b = @abs(body_b.velocity.dot(collision.normal.negate()));
+    const total_speed = speed_a + speed_b;
     const half_mtv = collision.mtv.scale(0.5);
-    body_a.position = body_a.position.add(half_mtv);
-    body_b.position = body_b.position.sub(half_mtv);
+    const corrections: struct { a: m.Vec2, b: m.Vec2 } = if (total_speed > 0)
+        .{
+            .a = collision.mtv.scale(speed_a / total_speed),
+            .b = collision.mtv.scale(speed_b / total_speed),
+        }
+    else
+        .{ .a = half_mtv, .b = half_mtv };
 
-    // Velocity correction: Calculate relative velocity along collision normal.
+    // Apply position corrections.
+    body_a.position = body_a.position.add(corrections.a);
+    body_b.position = body_b.position.sub(corrections.b);
+
+    // Velocity correction:
+    // Calculate relative velocity along collision normal.
     const relative_velocity = body_a.velocity.sub(body_b.velocity);
     const velocity_along_normal = relative_velocity.dot(collision.normal);
 
