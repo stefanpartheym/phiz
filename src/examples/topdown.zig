@@ -82,6 +82,7 @@ fn setup(state: *State) !void {
     state.player = try state.world.addBody(phiz.Body.new(.dynamic, .{
         .position = display_half_size,
         .shape = .{ .circle = .{ .radius = 25 } },
+        .restitution = 0.8,
     }));
     const player_body = state.world.getBody(state.player);
     player_body.damping = PLAYER_DAMPING;
@@ -117,6 +118,8 @@ fn input(state: *State) !void {
                 .{ .circle = .{ .radius = 12.5 } }
             else
                 .{ .rectangle = .{ .size = m.Vec2.new(25, 25) } },
+            .restitution = if (rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt)) 0.5 else 0,
+            .damping = 1.5,
         }));
     }
 
