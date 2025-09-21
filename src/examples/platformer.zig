@@ -9,10 +9,10 @@ const DISPLAY_SIZE = m.Vec2_i32.new(800, 600);
 const TARGET_FPS = 60;
 const PHYSICS_TIMESTEP: f32 = 1.0 / 60.0;
 const PHYSICS_SUBSTEPS = 4;
-const PLAYER_SPEED_GROUND = 2000;
+const PLAYER_SPEED_GROUND = 3500;
 const PLAYER_SPEED_AIR = 250;
-const PLAYER_DAMPING_GROUND = 7.5;
-const PLAYER_DAMPING_AIR = 0.5;
+const PLAYER_DAMPING_GROUND = 14;
+const PLAYER_DAMPING_AIR = 0.15;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -142,7 +142,7 @@ fn update(state: *State, dt: f32) !void {
             const player_speed: f32 = if (bodyIsGrounded(player_body)) PLAYER_SPEED_GROUND else PLAYER_SPEED_AIR;
             player_body.applyForce(state.input.movement.scale(player_speed));
             if (state.input.jump and bodyIsGrounded(player_body)) {
-                player_body.applyImpulse(m.Vec2.new(0, -700));
+                player_body.applyImpulse(m.Vec2.new(0, -750));
             }
             // Update physics.
             try state.world.update(PHYSICS_TIMESTEP, PHYSICS_SUBSTEPS);
