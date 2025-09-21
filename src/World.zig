@@ -11,8 +11,6 @@ const Collision = @import("./Collision.zig");
 pub const DEFAULT_GRAVITY = m.Vec2.new(0, 9.81 * 100);
 /// Default terminal velocity.
 pub const DEFAULT_TERMINAL_VELOCITY: f32 = 1000;
-/// Default fixed timestep for physics simulation.
-pub const DEFAULT_FIXED_TIMESTEP: f32 = 1.0 / 60.0;
 
 pub const Config = struct {
     gravity: m.Vec2 = DEFAULT_GRAVITY,
