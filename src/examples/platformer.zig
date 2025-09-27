@@ -9,10 +9,10 @@ const DISPLAY_SIZE = m.Vec2_i32.new(800, 600);
 const TARGET_FPS = 60;
 const PHYSICS_TIMESTEP: f32 = 1.0 / 60.0;
 const PHYSICS_SUBSTEPS = 4;
-const PLAYER_SPEED_GROUND = 3500;
-const PLAYER_SPEED_AIR = 250;
-const PLAYER_DAMPING_GROUND = 14;
-const PLAYER_DAMPING_AIR = 0.15;
+const PLAYER_SPEED_GROUND = 900;
+const PLAYER_SPEED_AIR = 150;
+const PLAYER_DAMPING_GROUND = 3;
+const PLAYER_DAMPING_AIR = 0;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -46,6 +46,8 @@ fn setup(state: *State) !void {
     _ = try state.world.addBody(phiz.Body.new(.dynamic, .{
         .position = m.Vec2.new(display_size_f32.x() - 100, 100),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(50, 50) } },
+        .restitution = 0.8,
+        .damping = 1.5,
     }));
 
     // Ground
@@ -119,10 +121,6 @@ fn input(state: *State) !void {
     // Player movement
     state.input.movement = if (rl.isKeyDown(.h) or rl.isKeyDown(.a) or rl.isKeyDown(.left))
         m.Vec2.left()
-    else if (rl.isKeyDown(.j) or rl.isKeyDown(.s) or rl.isKeyDown(.down))
-        m.Vec2.down().negate()
-    else if (rl.isKeyDown(.k) or rl.isKeyDown(.w) or rl.isKeyDown(.up))
-        m.Vec2.up().negate()
     else if (rl.isKeyDown(.l) or rl.isKeyDown(.d) or rl.isKeyDown(.right))
         m.Vec2.right()
     else
@@ -135,25 +133,11 @@ fn input(state: *State) !void {
 fn update(state: *State, dt: f32) !void {
     if (state.physics_enabled) {
         state.accumulator += dt;
-        const moving_body = state.world.getBody(phiz.BodyId.new(0));
-        const player_body = state.world.getBody(state.player);
         while (state.accumulator >= PHYSICS_TIMESTEP) {
             state.accumulator -= PHYSICS_TIMESTEP;
-            // Apply force to the moving body.
-            moving_body.applyForce(m.Vec2.new(-100, 0));
-            // Apply forces to the player body.
-            const player_speed: f32 = if (bodyIsGrounded(player_body)) PLAYER_SPEED_GROUND else PLAYER_SPEED_AIR;
-            player_body.applyForce(state.input.movement.scale(player_speed));
-            if (state.input.jump and bodyIsGrounded(player_body)) {
-                player_body.applyImpulse(m.Vec2.new(0, -750));
-            }
-            // Update physics.
+            updatePlayerBody(state);
             try state.world.update(PHYSICS_TIMESTEP, PHYSICS_SUBSTEPS);
-            // Update player damping based on whether the player is on the ground or in the air.
-            player_body.damping = if (bodyIsGrounded(player_body))
-                PLAYER_DAMPING_GROUND
-            else
-                PLAYER_DAMPING_AIR;
+            updatePlayerDamping(state);
         }
     }
 }
@@ -169,6 +153,35 @@ fn render(state: *State) void {
     }
     common.renderHud(state);
     rl.endDrawing();
+}
+
+/// Apply forces to the player body based on input.
+fn updatePlayerBody(state: *State) void {
+    const player_body = state.world.getBody(state.player);
+
+    // Handle horizontal movement.
+    if (state.input.movement.x() != 0) {
+        const player_speed: f32 = if (bodyIsGrounded(player_body)) PLAYER_SPEED_GROUND else PLAYER_SPEED_AIR;
+        player_body.applyForce(state.input.movement.scale(player_speed));
+    } else {
+        const deceleration_factor: f32 = if (bodyIsGrounded(player_body)) 10 else 1;
+        const deceleration = -player_body.velocity.x() * deceleration_factor;
+        player_body.applyForce(m.Vec2.new(deceleration, 0));
+    }
+
+    // Handle jump.
+    if (state.input.jump and bodyIsGrounded(player_body)) {
+        player_body.applyImpulse(m.Vec2.new(0, -620));
+    }
+}
+
+/// Update player damping based on whether the player is on the ground or in the air.
+fn updatePlayerDamping(state: *State) void {
+    const player_body = state.world.getBody(state.player);
+    player_body.damping = if (bodyIsGrounded(player_body))
+        PLAYER_DAMPING_GROUND
+    else
+        PLAYER_DAMPING_AIR;
 }
 
 fn bodyIsGrounded(body: *phiz.Body) bool {
