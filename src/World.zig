@@ -4,6 +4,7 @@ const Body = @import("./Body.zig");
 const BodyId = @import("./BodyId.zig");
 const Circle = @import("./Circle.zig");
 const Collision = @import("./Collision.zig");
+const tracy = @import("tracy");
 
 /// Default gravity is more or less earth's gravity:
 ///   g = 9.81 m/s²
@@ -43,8 +44,12 @@ pub fn deinit(self: *Self) void {
 }
 
 pub fn update(self: *Self, timestep: f32, substeps: usize) !void {
+    const zone = tracy.initZone(@src(), .{});
+    defer zone.deinit();
+
     const substep = timestep / @as(f32, @floatFromInt(substeps));
 
+    const zone_apply_forces = tracy.initZone(@src(), .{ .name = "update:apply_forces" });
     // Apply forces.
     for (self.bodies.items) |*body| {
         // Reset penetration from previous physics step.
@@ -54,6 +59,7 @@ pub fn update(self: *Self, timestep: f32, substeps: usize) !void {
         body.accelerate(timestep);
         body.applyDamping(timestep);
     }
+    zone_apply_forces.deinit();
 
     // Integration and collision detection.
     for (0..substeps) |_| {
@@ -74,6 +80,7 @@ pub fn update(self: *Self, timestep: f32, substeps: usize) !void {
         }
     }
 
+    const zone_reset = tracy.initZone(@src(), .{ .name = "update:reset" });
     // Reset accelerations and clamp velocities.
     for (self.bodies.items) |*body| {
         body.acceleration = m.Vec2.zero();
@@ -81,6 +88,7 @@ pub fn update(self: *Self, timestep: f32, substeps: usize) !void {
             body.velocity = body.velocity.norm().scale(self.terminal_velocity);
         }
     }
+    zone_reset.deinit();
 }
 
 pub fn addBody(self: *Self, body: Body) !BodyId {
@@ -93,6 +101,9 @@ pub fn getBody(self: *const Self, handle: BodyId) *Body {
 }
 
 fn detectCollisions(self: *Self) !void {
+    const zone = tracy.initZone(@src(), .{});
+    defer zone.deinit();
+
     // Clear previous collisions
     self.collisions.clearRetainingCapacity();
 
@@ -156,6 +167,9 @@ fn detectCollisions(self: *Self) !void {
 }
 
 fn sortCollisions(self: *Self) void {
+    const zone = tracy.initZone(@src(), .{});
+    defer zone.deinit();
+
     const sortLessThan = struct {
         /// Compare function to sort collisions by type (`dynamic_static` first).
         pub fn sortFn(_: void, lhs: Collision, rhs: Collision) bool {
@@ -166,6 +180,9 @@ fn sortCollisions(self: *Self) void {
 }
 
 fn resolveCollisions(self: *Self) void {
+    const zone = tracy.initZone(@src(), .{});
+    defer zone.deinit();
+
     // Sort collisions:
     // Make sure, dynamic vs. static collisions are resolved first, then dynamic vs. dynamic collisions.
     sortCollisions(self);
@@ -180,6 +197,9 @@ fn resolveCollisions(self: *Self) void {
 }
 
 fn resolveDynamicStaticCollision(self: *Self, collision: Collision) void {
+    const zone = tracy.initZone(@src(), .{});
+    defer zone.deinit();
+
     const body_a = self.getBody(collision.body_a);
     const body_b = self.getBody(collision.body_b);
 
@@ -200,6 +220,9 @@ fn resolveDynamicStaticCollision(self: *Self, collision: Collision) void {
 }
 
 fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) void {
+    const zone = tracy.initZone(@src(), .{});
+    defer zone.deinit();
+
     const body_a = self.getBody(collision.body_a);
     const body_b = self.getBody(collision.body_b);
 
