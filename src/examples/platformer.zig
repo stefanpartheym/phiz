@@ -101,6 +101,10 @@ fn input(state: *State) !void {
         state.debugger.frame_stepping_enabled = !state.debugger.frame_stepping_enabled;
     }
 
+    if (rl.isKeyPressed(.enter)) {
+        state.debugger.produceTime(1.0 / 60.0);
+    }
+
     if (rl.isMouseButtonPressed(.left) or rl.isMouseButtonPressed(.right)) {
         const mouse_pos = rl.getMousePosition();
         _ = try state.world.addBody(phiz.Body.new(if (rl.isMouseButtonPressed(.left)) .dynamic else .static, .{
@@ -114,30 +118,49 @@ fn input(state: *State) !void {
         }));
     }
 
-    if (rl.isKeyPressed(.enter)) {
-        state.debugger.produceTime(1.0 / 60.0);
-    }
+    //
+    // Player input
+    //
+    // NOTE:
+    // Since player movement is applied in the physics update step, we need to
+    // make sure, input from a previous frame is carried over to the next frame,
+    // until the next physics update runs.
+    // This is why, we're not overwriting the input state with empty values,
+    // when there was no input in the current frame.
+    //
 
-    // Player movement
-    state.input.movement = if (rl.isKeyDown(.h) or rl.isKeyDown(.a) or rl.isKeyDown(.left))
+    // Movement
+    const movement_input = if (rl.isKeyDown(.h) or rl.isKeyDown(.a) or rl.isKeyDown(.left))
         m.Vec2.left()
     else if (rl.isKeyDown(.l) or rl.isKeyDown(.d) or rl.isKeyDown(.right))
         m.Vec2.right()
     else
-        m.Vec2.zero();
+        null;
 
-    // Player jump
-    state.input.jump = rl.isKeyPressed(.space);
+    if (movement_input) |movement| {
+        state.input.movement = movement;
+    }
+
+    // Jump
+    if (rl.isKeyPressed(.space)) {
+        state.input.jump = true;
+    }
 }
 
 fn update(state: *State, dt: f32) !void {
     if (state.physics_enabled) {
         state.accumulator += dt;
+        const run_physics = state.accumulator >= PHYSICS_TIMESTEP;
         while (state.accumulator >= PHYSICS_TIMESTEP) {
             state.accumulator -= PHYSICS_TIMESTEP;
-            updatePlayerBody(state);
+            applyPlayerInput(state);
             try state.world.update(PHYSICS_TIMESTEP, PHYSICS_SUBSTEPS);
             updatePlayerDamping(state);
+        }
+
+        // Clear input state, if physics ran at least once this frame.
+        if (run_physics) {
+            state.input.clear();
         }
     }
 }
@@ -155,11 +178,11 @@ fn render(state: *State) void {
     rl.endDrawing();
 }
 
-/// Apply forces to the player body based on input.
-fn updatePlayerBody(state: *State) void {
+/// Apply forces and implulses to the player body based on input state.
+fn applyPlayerInput(state: *State) void {
     const player_body = state.world.getBody(state.player);
 
-    // Handle horizontal movement.
+    // Handle horizontal movement
     if (state.input.movement.x() != 0) {
         const player_speed: f32 = if (bodyIsGrounded(player_body)) PLAYER_SPEED_GROUND else PLAYER_SPEED_AIR;
         player_body.applyForce(state.input.movement.scale(player_speed));
@@ -169,7 +192,7 @@ fn updatePlayerBody(state: *State) void {
         player_body.applyForce(m.Vec2.new(deceleration, 0));
     }
 
-    // Handle jump.
+    // Handle jump
     if (state.input.jump and bodyIsGrounded(player_body)) {
         player_body.applyImpulse(m.Vec2.new(0, -620));
     }

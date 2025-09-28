@@ -35,6 +35,11 @@ pub const State = struct {
         };
         movement: m.Vec2,
         jump: bool,
+
+        pub fn clear(self: *@This()) void {
+            self.movement = m.Vec2.zero();
+            self.jump = false;
+        }
     };
 
     const Self = @This();

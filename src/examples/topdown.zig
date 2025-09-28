@@ -128,7 +128,7 @@ fn input(state: *State) !void {
     }
 
     //
-    // Player movement
+    // Player input
     //
 
     // Horizontal movement
@@ -155,12 +155,17 @@ fn input(state: *State) !void {
         direction_v = m.Vec2.down().negate();
     }
 
-    state.input.movement = direction_h.add(direction_v);
+    const direction = direction_h.add(direction_v);
+
+    if (!direction.eql(m.Vec2.zero())) {
+        state.input.movement = direction;
+    }
 }
 
 fn update(state: *State, dt: f32) !void {
     if (state.physics_enabled) {
         state.accumulator += dt;
+        const run_physics = state.accumulator >= PHYSICS_TIMESTEP;
         const player_body = state.world.getBody(state.player);
         while (state.accumulator >= PHYSICS_TIMESTEP) {
             state.accumulator -= PHYSICS_TIMESTEP;
@@ -175,6 +180,11 @@ fn update(state: *State, dt: f32) !void {
             }
             // Update physics.
             try state.world.update(PHYSICS_TIMESTEP, PHYSICS_SUBSTEPS);
+        }
+
+        // Clear input state, if physics ran at least once this frame.
+        if (run_physics) {
+            state.input.clear();
         }
     }
 }
