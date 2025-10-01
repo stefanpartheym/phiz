@@ -29,7 +29,10 @@ gravity: m.Vec2,
 terminal_velocity: f32,
 dt_accumulator: f32,
 bodies: std.ArrayList(Body),
-collisions: std.ArrayList(Collision),
+/// dynamic-static collisions
+collisions_ds: std.ArrayList(Collision),
+/// dynamic-dynamic collisions
+collisions_dd: std.ArrayList(Collision),
 spatial_grid: SpatialHashGrid,
 
 pub fn init(allocator: std.mem.Allocator, config: Config) Self {
@@ -39,14 +42,16 @@ pub fn init(allocator: std.mem.Allocator, config: Config) Self {
         .terminal_velocity = config.terminal_velocity,
         .dt_accumulator = 0,
         .bodies = std.ArrayList(Body){},
-        .collisions = std.ArrayList(Collision){},
+        .collisions_ds = std.ArrayList(Collision){},
+        .collisions_dd = std.ArrayList(Collision){},
         .spatial_grid = SpatialHashGrid.init(allocator, config.spatial_grid_cell_size),
     };
 }
 
 pub fn deinit(self: *Self) void {
     self.spatial_grid.deinit();
-    self.collisions.deinit(self.allocator);
+    self.collisions_ds.deinit(self.allocator);
+    self.collisions_dd.deinit(self.allocator);
     self.bodies.deinit(self.allocator);
 }
 
@@ -112,7 +117,8 @@ fn detectCollisions(self: *Self) !void {
     defer zone.deinit();
 
     // Clear previous collisions
-    self.collisions.clearRetainingCapacity();
+    self.collisions_ds.clearRetainingCapacity();
+    self.collisions_dd.clearRetainingCapacity();
 
     const pairs = try self.detectCollisionsBroadPhase();
     try self.detectCollisionsNarrowPhase(pairs);
@@ -192,7 +198,11 @@ fn detectCollisionsNarrowPhase(self: *World, pairs: []const SpatialHashGrid.Body
                 .mtv = collision_mtv,
                 .normal = collision_mtv.norm(),
             };
-            try self.collisions.append(self.allocator, collision);
+            // Append collision to appropriate list based on its type.
+            switch (collision.type) {
+                .dynamic_static => try self.collisions_ds.append(self.allocator, collision),
+                .dynamic_dynamic => try self.collisions_dd.append(self.allocator, collision),
+            }
             // Store the penetration in both bodies.
             body_a.accumulatePenetration(collision_mtv);
             body_b.accumulatePenetration(collision_mtv.negate());
@@ -200,35 +210,17 @@ fn detectCollisionsNarrowPhase(self: *World, pairs: []const SpatialHashGrid.Body
     }
 }
 
-fn sortCollisions(self: *Self) void {
-    const zone = tracy.initZone(@src(), .{});
-    defer zone.deinit();
-
-    const sortLessThan = struct {
-        /// Compare function to sort collisions by type (`dynamic_static` first).
-        pub fn sortFn(_: void, lhs: Collision, rhs: Collision) bool {
-            return lhs.type == .dynamic_static or rhs.type == .dynamic_dynamic;
-        }
-    }.sortFn;
-    std.sort.insertion(Collision, self.collisions.items, {}, sortLessThan);
-}
-
 fn resolveCollisions(self: *Self) void {
     const zone = tracy.initZone(@src(), .{});
     defer zone.deinit();
 
-    // Sort collisions:
-    // Make sure, dynamic vs. static collisions are resolved first, then dynamic vs. dynamic collisions.
-    // PERF: Sorting collisions has a significant performance cost but produces better results (less overlaps).
-    // Also, it seems like, physics simulation is more deterministic when collisions are sorted (needs to be proven).
-    self.sortCollisions();
-
-    // Resolve collisions
-    for (self.collisions.items) |collision| {
-        switch (collision.type) {
-            .dynamic_static => self.resolveDynamicStaticCollision(collision),
-            .dynamic_dynamic => self.resolveDynamicDynamicCollision(collision),
-        }
+    // Resolve dynamic-static collisions first, then dynamic-dynamic collisions.
+    // This ensures proper collision resolution order without sorting.
+    for (self.collisions_ds.items) |collision| {
+        self.resolveDynamicStaticCollision(collision);
+    }
+    for (self.collisions_dd.items) |collision| {
+        self.resolveDynamicDynamicCollision(collision);
     }
 }
 
@@ -323,35 +315,6 @@ fn mockCollisionType(collision_type: Collision.Type) Collision {
     };
 }
 
-test "World.sortCollisions: should sort static collisions first" {
-    const allocator = std.testing.allocator;
-    var world = World.init(allocator, .{ .gravity = m.Vec2.zero() });
-    defer world.deinit();
-
-    try world.collisions.append(allocator, mockCollisionType(.dynamic_dynamic));
-    try world.collisions.append(allocator, mockCollisionType(.dynamic_dynamic));
-    try world.collisions.append(allocator, mockCollisionType(.dynamic_static));
-    try world.collisions.append(allocator, mockCollisionType(.dynamic_static));
-    try world.collisions.append(allocator, mockCollisionType(.dynamic_dynamic));
-    try world.collisions.append(allocator, mockCollisionType(.dynamic_static));
-
-    world.sortCollisions();
-
-    const c0 = world.collisions.items[0];
-    const c1 = world.collisions.items[1];
-    const c2 = world.collisions.items[2];
-    const c3 = world.collisions.items[3];
-    const c4 = world.collisions.items[4];
-    const c5 = world.collisions.items[5];
-
-    try std.testing.expectEqual(.dynamic_static, c0.type);
-    try std.testing.expectEqual(.dynamic_static, c1.type);
-    try std.testing.expectEqual(.dynamic_static, c2.type);
-    try std.testing.expectEqual(.dynamic_dynamic, c3.type);
-    try std.testing.expectEqual(.dynamic_dynamic, c4.type);
-    try std.testing.expectEqual(.dynamic_dynamic, c5.type);
-}
-
 test "World.detectCollisions: Should detect collision between overlapping dynamic bodies" {
     var world = World.init(std.testing.allocator, .{});
     defer world.deinit();
@@ -369,7 +332,7 @@ test "World.detectCollisions: Should detect collision between overlapping dynami
 
     try world.detectCollisions();
 
-    try std.testing.expectEqual(1, world.collisions.items.len);
+    try std.testing.expectEqual(1, world.collisions_dd.items.len);
     try std.testing.expectEqual(0, body1.penetration.x());
     try std.testing.expectEqual(-1, body1.penetration.y());
     try std.testing.expectEqual(0, body2.penetration.x());
@@ -393,7 +356,8 @@ test "World.detectCollisions: Should not detect collision between non-overlappin
     _ = try world.addBody(body2);
 
     try world.detectCollisions();
-    try std.testing.expectEqual(0, world.collisions.items.len);
+    try std.testing.expectEqual(0, world.collisions_ds.items.len);
+    try std.testing.expectEqual(0, world.collisions_dd.items.len);
 }
 
 test "World.detectCollisions: Should skip static vs static collisions" {
@@ -413,7 +377,8 @@ test "World.detectCollisions: Should skip static vs static collisions" {
     _ = try world.addBody(body2);
 
     try world.detectCollisions();
-    try std.testing.expectEqual(0, world.collisions.items.len);
+    try std.testing.expectEqual(0, world.collisions_ds.items.len);
+    try std.testing.expectEqual(0, world.collisions_dd.items.len);
 }
 
 test "World.detectCollisions: Should accumulate penetrations correctly (use deepest penetration on each axis)" {
@@ -438,7 +403,7 @@ test "World.detectCollisions: Should accumulate penetrations correctly (use deep
 
     try world.detectCollisions();
 
-    try std.testing.expectEqual(2, world.collisions.items.len);
+    try std.testing.expectEqual(2, world.collisions_dd.items.len);
     try std.testing.expectEqual(-1, body1.penetration.x());
     try std.testing.expectEqual(-2, body1.penetration.y());
     try std.testing.expectEqual(0, body2.penetration.x());
@@ -465,8 +430,8 @@ test "World.detectCollisions: Should classify collision types correctly" {
 
     try world.detectCollisions();
 
-    try std.testing.expectEqual(1, world.collisions.items.len);
-    const collision = world.collisions.items[0];
+    try std.testing.expectEqual(1, world.collisions_ds.items.len);
+    const collision = world.collisions_ds.items[0];
     try std.testing.expectEqual(.dynamic_static, collision.type);
 }
 
@@ -485,8 +450,8 @@ test "World.detectCollisions: Should detect circle vs circle collision" {
 
     try world.detectCollisions();
 
-    try std.testing.expectEqual(1, world.collisions.items.len);
-    const collision = world.collisions.items[0];
+    try std.testing.expectEqual(1, world.collisions_dd.items.len);
+    const collision = world.collisions_dd.items[0];
     try std.testing.expectEqual(0, collision.body_a.index);
     try std.testing.expectEqual(1, collision.body_b.index);
     try std.testing.expectEqual(.dynamic_dynamic, collision.type);
@@ -507,8 +472,8 @@ test "World.detectCollisions: Should detect rectangle vs circle collision" {
 
     try world.detectCollisions();
 
-    try std.testing.expectEqual(1, world.collisions.items.len);
-    const collision = world.collisions.items[0];
+    try std.testing.expectEqual(1, world.collisions_ds.items.len);
+    const collision = world.collisions_ds.items[0];
     try std.testing.expectEqual(0, collision.body_a.index);
     try std.testing.expectEqual(1, collision.body_b.index);
     try std.testing.expectEqual(.dynamic_static, collision.type);
@@ -529,7 +494,8 @@ test "World.detectCollisions: Should not detect non-overlapping circle vs rectan
 
     try world.detectCollisions();
 
-    try std.testing.expectEqual(0, world.collisions.items.len);
+    try std.testing.expectEqual(0, world.collisions_ds.items.len);
+    try std.testing.expectEqual(0, world.collisions_dd.items.len);
 }
 
 test "World.detectCollisions: Should produce consistent MTV directions" {
@@ -547,8 +513,8 @@ test "World.detectCollisions: Should produce consistent MTV directions" {
 
     try world.detectCollisions();
 
-    try std.testing.expectEqual(1, world.collisions.items.len);
-    const collision = world.collisions.items[0];
+    try std.testing.expectEqual(1, world.collisions_dd.items.len);
+    const collision = world.collisions_dd.items[0];
     // MTV should push left circle further left (negative X direction).
     try std.testing.expectEqual(-1, collision.mtv.x());
     try std.testing.expectEqual(0, collision.mtv.y());
