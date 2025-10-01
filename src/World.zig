@@ -4,6 +4,7 @@ const Body = @import("./Body.zig");
 const BodyId = @import("./BodyId.zig");
 const Circle = @import("./Circle.zig");
 const Collision = @import("./Collision.zig");
+const SpatialHashGrid = @import("./SpatialHashGrid.zig");
 const tracy = @import("tracy");
 
 /// Default gravity is more or less earth's gravity:
@@ -16,6 +17,9 @@ pub const DEFAULT_TERMINAL_VELOCITY: f32 = 1000;
 pub const Config = struct {
     gravity: m.Vec2 = DEFAULT_GRAVITY,
     terminal_velocity: f32 = DEFAULT_TERMINAL_VELOCITY,
+    /// Cell size for spatial hash grid.
+    /// Should be roughly the size of the average game object.
+    spatial_grid_cell_size: f32 = 64,
 };
 
 const Self = @This();
@@ -26,6 +30,7 @@ terminal_velocity: f32,
 dt_accumulator: f32,
 bodies: std.ArrayList(Body),
 collisions: std.ArrayList(Collision),
+spatial_grid: SpatialHashGrid,
 
 pub fn init(allocator: std.mem.Allocator, config: Config) Self {
     return Self{
@@ -35,12 +40,14 @@ pub fn init(allocator: std.mem.Allocator, config: Config) Self {
         .dt_accumulator = 0,
         .bodies = std.ArrayList(Body){},
         .collisions = std.ArrayList(Collision){},
+        .spatial_grid = SpatialHashGrid.init(allocator, config.spatial_grid_cell_size),
     };
 }
 
 pub fn deinit(self: *Self) void {
-    self.bodies.deinit(self.allocator);
+    self.spatial_grid.deinit();
     self.collisions.deinit(self.allocator);
+    self.bodies.deinit(self.allocator);
 }
 
 pub fn update(self: *Self, timestep: f32, substeps: usize) !void {
@@ -107,61 +114,88 @@ fn detectCollisions(self: *Self) !void {
     // Clear previous collisions
     self.collisions.clearRetainingCapacity();
 
-    // Check all pairs of bodies for collisions
-    for (0..self.bodies.items.len) |i| {
-        for (i + 1..self.bodies.items.len) |j| {
-            const body_a = &self.bodies.items[i];
-            const body_b = &self.bodies.items[j];
+    const pairs = try self.detectCollisionsBroadPhase();
+    try self.detectCollisionsNarrowPhase(pairs);
+}
 
-            // Skip static vs static (should never happen anyway)
-            if (body_a.isStatic() and body_b.isStatic()) continue;
+fn detectCollisionsBroadPhase(self: *World) ![]const SpatialHashGrid.BodyPair {
+    const zone = tracy.initZone(@src(), .{});
+    defer zone.deinit();
 
-            // Detect collision based on shape types
-            const mtv = switch (body_a.shape) {
-                .rectangle => switch (body_b.shape) {
-                    .rectangle => blk: {
-                        const aabb_a = body_a.getAabb();
-                        const aabb_b = body_b.getAabb();
-                        break :blk aabb_a.getMtv(aabb_b);
-                    },
-                    .circle => |circ_b| blk: {
-                        const circle_b = Circle.new(body_b.getCenter(), circ_b.radius);
-                        const aabb_a = body_a.getAabb();
-                        // We want the MTV to move body_a away from body_b, so we negate circle_b's MTV.
-                        if (circle_b.getMtvWithAabb(aabb_a)) |mtv_result| {
-                            break :blk mtv_result.negate();
-                        }
-                        break :blk null;
-                    },
+    const zone_spatial_grid = tracy.initZone(@src(), .{ .name = "detectCollisionsBroadPhase:setup" });
+    // Clear and rebuild the spatial grid
+    self.spatial_grid.clear();
+    // Insert all bodies into the spatial grid
+    for (self.bodies.items, 0..) |*body, i| {
+        const aabb = body.getAabb();
+        try self.spatial_grid.insert(BodyId.new(i), aabb);
+    }
+    zone_spatial_grid.deinit();
+
+    const zone_pairs = tracy.initZone(@src(), .{ .name = "detectCollisionsBroadPhase:get_pairs" });
+    // Get potential collision pairs from the spatial grid
+    const pairs = try self.spatial_grid.getPairs();
+    zone_pairs.deinit();
+
+    return pairs;
+}
+
+fn detectCollisionsNarrowPhase(self: *World, pairs: []const SpatialHashGrid.BodyPair) !void {
+    const zone = tracy.initZone(@src(), .{});
+    defer zone.deinit();
+
+    for (pairs) |pair| {
+        const body_a = &self.bodies.items[pair.a.index];
+        const body_b = &self.bodies.items[pair.b.index];
+
+        // Skip static vs static (should never happen anyway)
+        if (body_a.isStatic() and body_b.isStatic()) continue;
+
+        // Detect collision based on shape types
+        const mtv = switch (body_a.shape) {
+            .rectangle => switch (body_b.shape) {
+                .rectangle => blk: {
+                    const aabb_a = body_a.getAabb();
+                    const aabb_b = body_b.getAabb();
+                    break :blk aabb_a.getMtv(aabb_b);
                 },
-                .circle => |circ_a| switch (body_b.shape) {
-                    .rectangle => blk: {
-                        const circle_a = Circle.new(body_a.getCenter(), circ_a.radius);
-                        const aabb_b = body_b.getAabb();
-                        // Circle.getMtvWithAabb already returns the MTV to move circle away from rectangle.
-                        break :blk circle_a.getMtvWithAabb(aabb_b);
-                    },
-                    .circle => |circ_b| blk: {
-                        const circle_a = Circle.new(body_a.getCenter(), circ_a.radius);
-                        const circle_b = Circle.new(body_b.getCenter(), circ_b.radius);
-                        break :blk circle_a.getMtv(circle_b);
-                    },
+                .circle => |circ_b| blk: {
+                    const circle_b = Circle.new(body_b.getCenter(), circ_b.radius);
+                    const aabb_a = body_a.getAabb();
+                    // We want the MTV to move body_a away from body_b, so we negate circle_b's MTV.
+                    if (circle_b.getMtvWithAabb(aabb_a)) |mtv_result| {
+                        break :blk mtv_result.negate();
+                    }
+                    break :blk null;
                 },
+            },
+            .circle => |circ_a| switch (body_b.shape) {
+                .rectangle => blk: {
+                    const circle_a = Circle.new(body_a.getCenter(), circ_a.radius);
+                    const aabb_b = body_b.getAabb();
+                    // Circle.getMtvWithAabb already returns the MTV to move circle away from rectangle.
+                    break :blk circle_a.getMtvWithAabb(aabb_b);
+                },
+                .circle => |circ_b| blk: {
+                    const circle_a = Circle.new(body_a.getCenter(), circ_a.radius);
+                    const circle_b = Circle.new(body_b.getCenter(), circ_b.radius);
+                    break :blk circle_a.getMtv(circle_b);
+                },
+            },
+        };
+
+        if (mtv) |collision_mtv| {
+            const collision = Collision{
+                .type = Collision.determineType(body_a, body_b),
+                .body_a = pair.a,
+                .body_b = pair.b,
+                .mtv = collision_mtv,
+                .normal = collision_mtv.norm(),
             };
-
-            if (mtv) |collision_mtv| {
-                const collision = Collision{
-                    .type = Collision.determineType(body_a, body_b),
-                    .body_a = BodyId.new(i),
-                    .body_b = BodyId.new(j),
-                    .mtv = collision_mtv,
-                    .normal = collision_mtv.norm(),
-                };
-                try self.collisions.append(self.allocator, collision);
-                // Store the penetration in both bodies.
-                body_a.accumulatePenetration(collision_mtv);
-                body_b.accumulatePenetration(collision_mtv.negate());
-            }
+            try self.collisions.append(self.allocator, collision);
+            // Store the penetration in both bodies.
+            body_a.accumulatePenetration(collision_mtv);
+            body_b.accumulatePenetration(collision_mtv.negate());
         }
     }
 }
@@ -185,7 +219,9 @@ fn resolveCollisions(self: *Self) void {
 
     // Sort collisions:
     // Make sure, dynamic vs. static collisions are resolved first, then dynamic vs. dynamic collisions.
-    sortCollisions(self);
+    // PERF: Sorting collisions has a significant performance cost but produces better results (less overlaps).
+    // Also, it seems like, physics simulation is more deterministic when collisions are sorted (needs to be proven).
+    self.sortCollisions();
 
     // Resolve collisions
     for (self.collisions.items) |collision| {
