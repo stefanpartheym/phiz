@@ -10,10 +10,6 @@ const State = common.State;
 
 const DISPLAY_SIZE = m.Vec2_i32.new(800, 600);
 const TARGET_FPS = 60;
-/// Timout in seconds after which the application should exit.
-/// This is useful for performance testing.
-/// `0` => no timeout
-const TIMEOUT = 0;
 const PHYSICS_TIMESTEP: f32 = 1.0 / 60.0;
 const PHYSICS_SUBSTEPS = 4;
 
@@ -27,17 +23,20 @@ pub fn main() !void {
     rl.initWindow(DISPLAY_SIZE.x(), DISPLAY_SIZE.y(), "phiz example: demo");
     defer rl.closeWindow();
 
-    var state = State.init(allocator, .{});
+    var state = State.init(allocator, .{
+        .debugger_config = .{
+            .physics_timeout = 10,
+            .frame_stepping_enabled = true,
+        },
+    });
     defer state.deinit();
     try setup(&state);
 
-    var time: f32 = 0;
-    while (state.running and (TIMEOUT == 0 or time < TIMEOUT)) {
+    while (state.running) {
         const dt = if (state.debugger.frame_stepping_enabled)
             state.debugger.consumeTime()
         else
             rl.getFrameTime();
-        time += dt;
         try input(&state);
         try update(&state, dt);
         render(&state);
@@ -104,6 +103,7 @@ fn spawnDynamicBodies(state: *State, count: usize, shape: phiz.Body.Shape, offse
 }
 
 fn reset(state: *State) !void {
+    state.debugger.physics_time = 0;
     state.world.bodies.clearRetainingCapacity();
     try setup(state);
 }
@@ -144,9 +144,10 @@ fn input(state: *State) !void {
 }
 
 fn update(state: *State, dt: f32) !void {
-    if (state.physics_enabled) {
+    if (state.physics_enabled and !state.debugger.isPhysicsTimeout()) {
         state.accumulator += dt;
         while (state.accumulator >= PHYSICS_TIMESTEP) {
+            state.debugger.physics_time += PHYSICS_TIMESTEP;
             state.accumulator -= PHYSICS_TIMESTEP;
             try state.world.update(PHYSICS_TIMESTEP, PHYSICS_SUBSTEPS);
         }

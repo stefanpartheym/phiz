@@ -7,13 +7,29 @@ const m = phiz.m;
 
 pub const State = struct {
     const Debugger = struct {
-        pub const init = @This(){
-            .frame_stepping_enabled = false,
-            .frame_dt = 0,
+        const Config = struct {
+            frame_stepping_enabled: bool = false,
+            /// Timout in seconds after which the physics simulation should stop.
+            /// This is useful for performance testing.
+            /// Value `0` means no timeout.
+            physics_timeout: f32 = 0,
         };
 
         frame_stepping_enabled: bool,
         frame_dt: f32,
+        /// Accumulated time used for physics simulation.
+        physics_time: f32,
+        /// Maximum time to run physics simulation in seconds.
+        physics_timeout: f32,
+
+        pub fn new(config: @This().Config) @This() {
+            return @This(){
+                .frame_stepping_enabled = config.frame_stepping_enabled,
+                .frame_dt = 0,
+                .physics_time = 0,
+                .physics_timeout = config.physics_timeout,
+            };
+        }
 
         /// Produce time for a single frame.
         pub fn produceTime(self: *@This(), dt: f32) void {
@@ -26,10 +42,16 @@ pub const State = struct {
             self.frame_dt = 0;
             return result;
         }
+
+        /// Checks if physics simulation should stop.
+        pub inline fn isPhysicsTimeout(self: *const @This()) bool {
+            const timeout = self.physics_timeout;
+            return timeout > 0 and self.physics_time >= timeout;
+        }
     };
 
     const Input = struct {
-        pub const init = @This(){
+        const init = @This(){
             .movement = m.Vec2.zero(),
             .jump = false,
         };
@@ -42,6 +64,11 @@ pub const State = struct {
         }
     };
 
+    const Config = struct {
+        debugger_config: Debugger.Config = .{},
+        physics_config: phiz.World.Config = .{},
+    };
+
     const Self = @This();
 
     running: bool,
@@ -52,14 +79,14 @@ pub const State = struct {
     world: phiz.World,
     player: phiz.BodyId,
 
-    pub fn init(allocator: std.mem.Allocator, physics_config: phiz.World.Config) Self {
+    pub fn init(allocator: std.mem.Allocator, config: Config) Self {
         return Self{
             .running = true,
             .physics_enabled = true,
             .accumulator = 0,
             .input = Input.init,
-            .debugger = Debugger.init,
-            .world = phiz.World.init(allocator, physics_config),
+            .debugger = Debugger.new(config.debugger_config),
+            .world = phiz.World.init(allocator, config.physics_config),
             .player = undefined,
         };
     }
@@ -185,6 +212,16 @@ pub fn renderHud(state: *State) void {
     if (state.debugger.frame_stepping_enabled) {
         rl.drawText(
             "Frame stepping",
+            offset.x(),
+            font_size * line + offset.y() * (line + 1),
+            font_size,
+            rl.Color.ray_white,
+        );
+    }
+    line += 1;
+    if (state.debugger.isPhysicsTimeout()) {
+        rl.drawText(
+            "Physics timeout",
             offset.x(),
             font_size * line + offset.y() * (line + 1),
             font_size,

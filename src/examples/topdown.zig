@@ -23,7 +23,7 @@ pub fn main() !void {
     rl.initWindow(DISPLAY_SIZE.x(), DISPLAY_SIZE.y(), "phiz example: top-down");
     defer rl.closeWindow();
 
-    var state = State.init(allocator, .{ .gravity = m.Vec2.zero() });
+    var state = State.init(allocator, .{ .physics_config = .{ .gravity = m.Vec2.zero() } });
     defer state.deinit();
     try setup(&state);
 
