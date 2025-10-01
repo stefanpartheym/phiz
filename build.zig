@@ -93,6 +93,18 @@ pub fn build(b: *std.Build) void {
     };
     example_topdown.add(b, "topdown");
 
+    const example_demo = Example{
+        .source = "src/examples/demo.zig",
+        .target = target,
+        .optimize = optimize,
+        .raylib_mod = raylib_mod,
+        .raylib_lib = raylib_lib,
+        .tracy_mod = tracy_mod,
+        .tracy_lib = tracy_lib,
+        .main_mod = mod,
+    };
+    example_demo.add(b, "demo");
+
     //
     // Unit tests
     //

@@ -2,7 +2,7 @@
 
 > A very basic 2D physics engine written in the [Zig programming language](https://ziglang.org).
 
-![2D platformer physics example](./media/platformer.gif)
+![Demo](./media/demo.gif)
 
 ## Motivation
 
@@ -32,10 +32,23 @@ The list of features I'm planning to implement:
 
 ## Examples
 
-Both examples use a fixed timestep of 1/60 seconds for physics simulation. This will provide consistent physics
-simulation across frame rates and serves sort of a "best practice" on how to use the engine.
+All examples use a fixed timestep of 1/60 seconds for physics simulation. This will provide consistent physics across
+frame rates and serves as sort of a "best practice" on how to use the engine.
+
+### Demo
+
+```sh
+zig build run-demo
+```
+
+This example demonstrates how multiple dynamic bodies fall onto a circle collider, bounce off and fall onto the ground.
+
+It mainly serves as a reliable scenario for performance testing, as it does not allow for player interaction and should
+always produce the same output (i.e. should be deterministic).
 
 ### Platformer
+
+![2D platformer physics example](./media/platformer.gif)
 
 ```sh
 zig build run-platformer
@@ -60,6 +73,7 @@ For the player a circle shape is used, which provides smooth sliding past corner
 ## Resources
 
 - [box2d.org](https://box2d.org/)
+- https://gafferongames.com/post/fix_your_timestep/
 - https://github.com/erincatto/box2d-lite
 - https://github.com/lumorsunil/zge
 - https://github.com/silversquirl/phyz

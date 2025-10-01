@@ -160,7 +160,7 @@ pub fn renderBodyDebug(body: phiz.Body, index: usize) void {
 }
 
 pub fn renderHud(state: *State) void {
-    const offset: i32 = 10;
+    const offset = m.Vec2_i32.new(30, 10);
     const font_size: i32 = 20;
     var text_buf: [128]u8 = undefined;
     const bodies_text = std.fmt.bufPrintZ(
@@ -168,12 +168,16 @@ pub fn renderHud(state: *State) void {
         "Bodies: {d}",
         .{state.world.bodies.items.len},
     ) catch unreachable;
-    rl.drawFPS(offset, offset);
     var line: i32 = 1;
+    rl.drawFPS(
+        offset.x(),
+        font_size * line + offset.y() * (line + 1),
+    );
+    line += 1;
     rl.drawText(
         bodies_text,
-        offset,
-        font_size * line + offset * (line + 1),
+        offset.x(),
+        font_size * line + offset.y() * (line + 1),
         font_size,
         rl.Color.ray_white,
     );
@@ -181,8 +185,8 @@ pub fn renderHud(state: *State) void {
     if (state.debugger.frame_stepping_enabled) {
         rl.drawText(
             "Frame stepping",
-            offset,
-            font_size * line + offset * (line + 1),
+            offset.x(),
+            font_size * line + offset.y() * (line + 1),
             font_size,
             rl.Color.ray_white,
         );
