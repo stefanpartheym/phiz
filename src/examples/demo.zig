@@ -10,6 +10,10 @@ const State = common.State;
 
 const DISPLAY_SIZE = m.Vec2_i32.new(800, 600);
 const TARGET_FPS = 60;
+/// Timout in seconds after which the application should exit.
+/// This is useful for performance testing.
+/// `0` => no timeout
+const TIMEOUT = 0;
 const PHYSICS_TIMESTEP: f32 = 1.0 / 60.0;
 const PHYSICS_SUBSTEPS = 4;
 
@@ -28,7 +32,7 @@ pub fn main() !void {
     try setup(&state);
 
     var time: f32 = 0;
-    while (state.running) {
+    while (state.running and (TIMEOUT == 0 or time < TIMEOUT)) {
         const dt = if (state.debugger.frame_stepping_enabled)
             state.debugger.consumeTime()
         else
