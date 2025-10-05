@@ -3,7 +3,27 @@ const m = @import("m");
 const Aabb = @import("./Aabb.zig");
 const BodyId = @import("./BodyId.zig");
 
-pub const BodyPair = struct { a: BodyId, b: BodyId };
+pub const BodyPair = struct {
+    a: BodyId,
+    b: BodyId,
+    key: u64,
+
+    /// Create a normalized BodyPair (smaller index first) to avoid duplicates.
+    pub fn new(a: BodyId, b: BodyId) @This() {
+        return if (a.index < b.index)
+            @This(){
+                .a = a,
+                .b = b,
+                .key = (@as(u64, b.index) << 32) | @as(u64, a.index),
+            }
+        else
+            @This(){
+                .a = b,
+                .b = a,
+                .key = (@as(u64, b.index) << 32) | @as(u64, a.index),
+            };
+    }
+};
 
 const GridCoord = struct {
     x: i32,
@@ -127,17 +147,11 @@ pub fn getPairs(self: *Self) ![]const BodyPair {
         // Check all pairs within this cell.
         for (body_list.items, 0..) |body_a, i| {
             for (body_list.items[i + 1 ..]) |body_b| {
-                // Create a normalized pair (smaller index first) to avoid duplicates.
-                const pair_key = if (body_a.index < body_b.index)
-                    (@as(u64, body_a.index) << 32) | @as(u64, body_b.index)
-                else
-                    (@as(u64, body_b.index) << 32) | @as(u64, body_a.index);
-                // Only add if we haven't seen this pair before.
-                if (!self.seen_pairs.contains(pair_key)) {
-                    try self.seen_pairs.put(pair_key, {});
-                    const a_id = if (body_a.index < body_b.index) body_a else body_b;
-                    const b_id = if (body_a.index < body_b.index) body_b else body_a;
-                    try self.pairs.append(self.allocator, BodyPair{ .a = a_id, .b = b_id });
+                const pair = BodyPair.new(body_a, body_b);
+                const pair_key_entry = try self.seen_pairs.getOrPut(pair.key);
+                // Add collision pair, if not already seen.
+                if (!pair_key_entry.found_existing) {
+                    try self.pairs.append(self.allocator, pair);
                 }
             }
         }
