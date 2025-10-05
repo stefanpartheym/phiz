@@ -5,6 +5,7 @@ const BodyId = @import("./BodyId.zig");
 const Circle = @import("./Circle.zig");
 const Collision = @import("./Collision.zig");
 const CollisionEvent = @import("./CollisionEvent.zig");
+const CollisionFilter = @import("./CollisionFilter.zig");
 const ContactListener = @import("./ContactListener.zig");
 const SpatialHashGrid = @import("./SpatialHashGrid.zig");
 const tracy = @import("tracy");
@@ -173,7 +174,7 @@ fn detectCollisionsNarrowPhase(self: *World, pairs: []const SpatialHashGrid.Body
         if (body_a.isStatic() and body_b.isStatic()) continue;
 
         // Check if bodies can collide.
-        if (!Body.CollisionFilter.canCollide(body_a.collision_filter, body_b.collision_filter)) continue;
+        if (!CollisionFilter.canCollide(body_a.collision_filter, body_b.collision_filter)) continue;
 
         // Detect collision based on shape types.
         const mtv = switch (body_a.shape) {
@@ -630,4 +631,175 @@ test "World.update: Should clamp velocity to terminal velocity" {
     try std.testing.expect(body.velocity.x() >= -world.terminal_velocity);
     try std.testing.expect(body.velocity.y() <= world.terminal_velocity);
     try std.testing.expect(body.velocity.y() >= -world.terminal_velocity);
+}
+
+// Global test state for ContactListener tests.
+var test_collision_count: u32 = 0;
+var test_body_a_id: ?BodyId = null;
+var test_body_b_id: ?BodyId = null;
+var test_disable_physics: bool = false;
+
+fn resetTestState() void {
+    test_collision_count = 0;
+    test_body_a_id = null;
+    test_body_b_id = null;
+    test_disable_physics = false;
+}
+
+fn testContactCallback(world: *World, event: *CollisionEvent) void {
+    _ = world;
+    test_collision_count += 1;
+    test_body_a_id = event.collision.body_a;
+    test_body_b_id = event.collision.body_b;
+    if (test_disable_physics) {
+        event.disable_physics = true;
+    }
+}
+
+test "ContactListener: Should call on_contact callback when collision occurs" {
+    resetTestState();
+
+    var world = World.init(std.testing.allocator, .{
+        .contact_listener = .{ .on_contact = testContactCallback },
+    });
+    defer world.deinit();
+
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+
+    try world.detectCollisions();
+
+    try std.testing.expectEqual(1, test_collision_count);
+    try std.testing.expectEqual(0, test_body_a_id.?.index);
+    try std.testing.expectEqual(1, test_body_b_id.?.index);
+}
+
+test "ContactListener: Should not call callback when no collision occurs" {
+    resetTestState();
+
+    var world = World.init(std.testing.allocator, .{
+        .contact_listener = .{ .on_contact = testContactCallback },
+    });
+    defer world.deinit();
+
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(5, 5),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+
+    try world.detectCollisions();
+
+    try std.testing.expectEqual(0, test_collision_count);
+}
+
+test "ContactListener: Should call callback multiple times for multiple collisions" {
+    resetTestState();
+
+    var world = World.init(std.testing.allocator, .{
+        .contact_listener = .{ .on_contact = testContactCallback },
+    });
+    defer world.deinit();
+
+    // Create three overlapping bodies.
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
+    }));
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
+    }));
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
+    }));
+
+    try world.detectCollisions();
+
+    // 3 pairs: (0,1), (0,2), (1,2)
+    try std.testing.expectEqual(3, test_collision_count);
+}
+
+test "ContactListener: Should disable physics when event.disable_physics is set" {
+    resetTestState();
+    // Make the test callback disable physics.
+    test_disable_physics = true;
+
+    var world = World.init(std.testing.allocator, .{
+        .contact_listener = .{ .on_contact = testContactCallback },
+    });
+    defer world.deinit();
+
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+
+    try world.detectCollisions();
+
+    try std.testing.expectEqual(1, test_collision_count);
+    // Should have no collisions in the physics lists because physics was disabled.
+    try std.testing.expectEqual(0, world.collisions_dd.items.len);
+    try std.testing.expectEqual(0, world.collisions_ds.items.len);
+}
+
+test "ContactListener: Should work with null callback" {
+    var world = World.init(std.testing.allocator, .{
+        .contact_listener = .{ .on_contact = null },
+    });
+    defer world.deinit();
+
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+
+    // Should not crash and should still detect collision for physics.
+    try world.detectCollisions();
+
+    try std.testing.expectEqual(1, world.collisions_dd.items.len);
+}
+
+test "ContactListener: Should provide correct collision information in callback" {
+    resetTestState();
+
+    var world = World.init(std.testing.allocator, .{
+        .contact_listener = .{ .on_contact = testContactCallback },
+    });
+    defer world.deinit();
+
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+    _ = try world.addBody(Body.new(.static, .{
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+
+    try world.detectCollisions();
+
+    try std.testing.expectEqual(1, test_collision_count);
+    try std.testing.expectEqual(1, world.collisions_ds.items.len);
+
+    const collision = world.collisions_ds.items[0];
+    try std.testing.expectEqual(Collision.Type.dynamic_static, collision.type);
 }

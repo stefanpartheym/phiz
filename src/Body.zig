@@ -1,5 +1,6 @@
 const m = @import("m");
 const Aabb = @import("./Aabb.zig");
+const CollisionFilter = @import("./CollisionFilter.zig");
 
 pub const BodyType = enum {
     static,
@@ -9,37 +10,6 @@ pub const BodyType = enum {
 pub const Shape = union(enum) {
     rectangle: struct { size: m.Vec2 },
     circle: struct { radius: f32 },
-};
-
-/// Collision filter to determine what bodies can collide.
-pub const CollisionFilter = struct {
-    /// Default collision filter: Collide with everything.
-    pub const init: @This() = .{
-        .layer = 0x0001,
-        .mask = 0xFFFF,
-        .group_index = 0,
-    };
-
-    /// What layer this body belongs to (single bit)
-    layer: u16,
-    /// What layers this body can collide with (bitmask)
-    mask: u16,
-    /// Group index for fine-grained control:
-    /// - Positive: bodies in same group always collide
-    /// - Negative: bodies in same group never collide
-    /// - Zero: use layer/mask filtering
-    group_index: i16 = 0,
-
-    /// Check if two filters can collide.
-    pub fn canCollide(filter_a: @This(), filter_b: @This()) bool {
-        // Group filtering takes precedence
-        if (filter_a.group_index != 0 and filter_a.group_index == filter_b.group_index) {
-            return filter_a.group_index > 0;
-        }
-        // Layer/mask filtering
-        return (filter_a.mask & filter_b.layer) != 0 and
-            (filter_b.mask & filter_a.layer) != 0;
-    }
 };
 
 pub const Config = struct {
