@@ -101,9 +101,28 @@ pub fn getPairs(self: *Self) ![]const BodyPair {
     self.pairs.clearRetainingCapacity();
     self.seen_pairs.clearRetainingCapacity();
 
+    // Pre-calculate estimated capacity to avoid reallocations.
+    var estimated_pairs: usize = 0;
     var iterator = self.cells.iterator();
     while (iterator.next()) |entry| {
+        const body_count = entry.value_ptr.items.len;
+        if (body_count > 1) {
+            // Add estimated pairs for this cell: n*(n-1)/2
+            estimated_pairs += (body_count * (body_count - 1)) / 2;
+        }
+    }
+
+    // Pre-allocate containers with estimated capacity.
+    try self.pairs.ensureTotalCapacity(self.allocator, estimated_pairs);
+    try self.seen_pairs.ensureTotalCapacity(@intCast(estimated_pairs));
+
+    // Reset iterator for actual pair generation.
+    iterator = self.cells.iterator();
+    while (iterator.next()) |entry| {
         const body_list = entry.value_ptr;
+
+        // Skip cells with fewer than 2 bodies, as they can't possibly have a colliding pair.
+        if (body_list.items.len < 2) continue;
 
         // Check all pairs within this cell.
         for (body_list.items, 0..) |body_a, i| {
