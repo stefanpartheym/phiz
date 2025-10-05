@@ -70,6 +70,7 @@ cells: CellHashMap,
 allocator: std.mem.Allocator,
 pairs: std.ArrayList(BodyPair),
 seen_pairs: PairHashMap,
+non_empty_cells: std.ArrayList(*std.ArrayList(BodyId)),
 
 pub fn init(allocator: std.mem.Allocator, cell_size: f32) Self {
     return Self{
@@ -78,6 +79,7 @@ pub fn init(allocator: std.mem.Allocator, cell_size: f32) Self {
         .allocator = allocator,
         .pairs = std.ArrayList(BodyPair){},
         .seen_pairs = PairHashMap.init(allocator),
+        .non_empty_cells = std.ArrayList(*std.ArrayList(BodyId)){},
     };
 }
 
@@ -89,6 +91,7 @@ pub fn deinit(self: *Self) void {
     self.cells.deinit();
     self.pairs.deinit(self.allocator);
     self.seen_pairs.deinit();
+    self.non_empty_cells.deinit(self.allocator);
 }
 
 pub fn clear(self: *Self) void {
@@ -120,38 +123,33 @@ pub fn insert(self: *Self, body_id: BodyId, aabb: Aabb) !void {
 pub fn getPairs(self: *Self) ![]const BodyPair {
     self.pairs.clearRetainingCapacity();
     self.seen_pairs.clearRetainingCapacity();
+    self.non_empty_cells.clearRetainingCapacity();
 
-    // Pre-calculate estimated capacity to avoid reallocations.
+    // Single pass: collect non-empty cells and estimate pairs
     var estimated_pairs: usize = 0;
     var iterator = self.cells.iterator();
     while (iterator.next()) |entry| {
         const body_count = entry.value_ptr.items.len;
         if (body_count > 1) {
-            // Add estimated pairs for this cell: n*(n-1)/2
             estimated_pairs += (body_count * (body_count - 1)) / 2;
+            try self.non_empty_cells.append(self.allocator, entry.value_ptr);
         }
     }
 
-    // Pre-allocate containers with estimated capacity.
+    // Pre-allocate containers with estimated capacity
     try self.pairs.ensureTotalCapacity(self.allocator, estimated_pairs);
     try self.seen_pairs.ensureTotalCapacity(@intCast(estimated_pairs));
 
-    // Reset iterator for actual pair generation.
-    iterator = self.cells.iterator();
-    while (iterator.next()) |entry| {
-        const body_list = entry.value_ptr;
-
-        // Skip cells with fewer than 2 bodies, as they can't possibly have a colliding pair.
-        if (body_list.items.len < 2) continue;
-
-        // Check all pairs within this cell.
+    // Process pairs from collected cells
+    for (self.non_empty_cells.items) |body_list| {
+        // Check all pairs within this cell
         for (body_list.items, 0..) |body_a, i| {
             for (body_list.items[i + 1 ..]) |body_b| {
                 const pair = BodyPair.new(body_a, body_b);
-                const pair_key_entry = try self.seen_pairs.getOrPut(pair.key);
-                // Add collision pair, if not already seen.
+                // Use assumeCapacity since we pre-allocated
+                const pair_key_entry = self.seen_pairs.getOrPutAssumeCapacity(pair.key);
                 if (!pair_key_entry.found_existing) {
-                    try self.pairs.append(self.allocator, pair);
+                    self.pairs.appendAssumeCapacity(pair);
                 }
             }
         }
