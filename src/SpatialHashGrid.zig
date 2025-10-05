@@ -294,6 +294,17 @@ fn insertBodyIntoCells(self: *Self, body_id: BodyId, aabb: Aabb) !void {
     }
 }
 
+/// Remove a body completely from the spatial grid.
+pub fn removeBody(self: *Self, body_id: BodyId) void {
+    // Remove from all cells it currently occupies
+    self.removeBodyFromCells(body_id);
+
+    // Mark position as invalid so it will be treated as "first time" if re-added
+    if (body_id.index < self.body_positions.items.len) {
+        self.body_positions.items[body_id.index] = m.Vec2.new(std.math.inf(f32), std.math.inf(f32));
+    }
+}
+
 /// Update a body's position.
 pub fn updateBody(self: *Self, body_id: BodyId, aabb: Aabb) !void {
     if (body_id.index >= self.body_positions.items.len) return;
@@ -465,7 +476,7 @@ test "SpatialHashGrid.insert: Should insert body into correct cells" {
     var grid = SpatialHashGrid.init(std.testing.allocator, 10);
     defer grid.deinit();
 
-    const body_id = BodyId.new(0);
+    const body_id = BodyId.new(0, 0);
     const aabb = Aabb.new(m.Vec2.new(5, 5), m.Vec2.new(15, 15));
 
     try grid.insert(body_id, aabb);
@@ -493,9 +504,9 @@ test "SpatialHashGrid.getPairs: Should return correct pairs" {
     var grid = SpatialHashGrid.init(std.testing.allocator, 10);
     defer grid.deinit();
 
-    const body_a = BodyId.new(0);
-    const body_b = BodyId.new(1);
-    const body_c = BodyId.new(2);
+    const body_a = BodyId.new(0, 0);
+    const body_b = BodyId.new(1, 0);
+    const body_c = BodyId.new(2, 0);
 
     // Bodies A and B overlap in same cell
     try grid.insert(body_a, Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(5, 5)));
@@ -516,8 +527,8 @@ test "SpatialHashGrid.clear: Should clear all cells but keep memory" {
     var grid = SpatialHashGrid.init(std.testing.allocator, 10);
     defer grid.deinit();
 
-    try grid.insert(BodyId.new(0), Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(5, 5)));
-    try grid.insert(BodyId.new(1), Aabb.new(m.Vec2.new(10, 10), m.Vec2.new(15, 15)));
+    try grid.insert(BodyId.new(0, 0), Aabb.new(m.Vec2.new(0, 0), m.Vec2.new(5, 5)));
+    try grid.insert(BodyId.new(1, 0), Aabb.new(m.Vec2.new(10, 10), m.Vec2.new(15, 15)));
 
     try std.testing.expect(grid.cells.count() > 0);
 

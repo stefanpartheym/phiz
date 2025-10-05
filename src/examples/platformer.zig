@@ -54,7 +54,7 @@ pub fn main() !void {
 fn setup(state: *State) !void {
     const display_size_f32 = DISPLAY_SIZE.cast(f32);
     const collider_size = 20;
-    const collision_filter_statics = phiz.Body.CollisionFilter{
+    const collision_filter_statics = phiz.CollisionFilter{
         .layer = CollisionLayer.STATIC_WORLD,
         .mask = CollisionLayer.STATIC_WORLD | CollisionLayer.PLAYER,
     };
@@ -110,7 +110,7 @@ fn setup(state: *State) !void {
 
     // Coins
     const coin_shape = phiz.Body.Shape{ .circle = .{ .radius = 10 } };
-    const coin_collision_filter = phiz.Body.CollisionFilter{ .layer = CollisionLayer.COINS, .mask = CollisionLayer.PLAYER };
+    const coin_collision_filter = phiz.CollisionFilter{ .layer = CollisionLayer.COINS, .mask = CollisionLayer.PLAYER };
     const coin_left_initial_pos = m.Vec2.new(75, 150);
     const coin_right_initial_pos = m.Vec2.new(475, 350);
     for (0..4) |i| {
@@ -134,7 +134,7 @@ fn setup(state: *State) !void {
 }
 
 fn reset(state: *State) !void {
-    state.world.bodies.clearRetainingCapacity();
+    state.world.clear();
     coins_collected = 0;
     try setup(state);
 }
@@ -163,7 +163,7 @@ fn input(state: *State) !void {
     if (rl.isMouseButtonPressed(.left) or rl.isMouseButtonPressed(.right)) {
         const mouse_pos = rl.getMousePosition();
         const body_type: phiz.Body.BodyType = if (rl.isMouseButtonPressed(.left)) .dynamic else .static;
-        const collision_filter: phiz.Body.CollisionFilter = if (body_type == .static)
+        const collision_filter: phiz.CollisionFilter = if (body_type == .static)
             .{
                 .layer = CollisionLayer.COINS,
                 .mask = CollisionLayer.PLAYER,
@@ -217,9 +217,9 @@ fn update(state: *State, dt: f32) !void {
         const run_physics = state.accumulator >= PHYSICS_TIMESTEP;
         while (state.accumulator >= PHYSICS_TIMESTEP) {
             state.accumulator -= PHYSICS_TIMESTEP;
-            applyPlayerInput(state);
+            try applyPlayerInput(state);
             try state.world.update(PHYSICS_TIMESTEP, PHYSICS_SUBSTEPS);
-            updatePlayerDamping(state);
+            try updatePlayerDamping(state);
         }
 
         // Clear input state, if physics ran at least once this frame.
@@ -232,10 +232,12 @@ fn update(state: *State, dt: f32) !void {
 fn render(state: *State) void {
     rl.beginDrawing();
     rl.clearBackground(rl.Color.black);
-    for (state.world.bodies.items) |body| {
+    for (state.world.bodies.items, 0..) |body, index| {
+        if (!state.world.isBodyActive(index)) continue;
         common.renderBody(body);
     }
     for (state.world.bodies.items, 0..) |body, index| {
+        if (!state.world.isBodyActive(index)) continue;
         common.renderBodyDebug(body, index);
     }
     common.renderHud(state);
@@ -244,8 +246,8 @@ fn render(state: *State) void {
 }
 
 /// Apply forces and implulses to the player body based on input state.
-fn applyPlayerInput(state: *State) void {
-    const player_body = state.world.getBody(state.player);
+fn applyPlayerInput(state: *State) !void {
+    const player_body = try state.world.getBody(state.player);
 
     // Handle horizontal movement
     if (state.input.movement.x() != 0) {
@@ -264,8 +266,8 @@ fn applyPlayerInput(state: *State) void {
 }
 
 /// Update player damping based on whether the player is on the ground or in the air.
-fn updatePlayerDamping(state: *State) void {
-    const player_body = state.world.getBody(state.player);
+fn updatePlayerDamping(state: *State) !void {
+    const player_body = try state.world.getBody(state.player);
     player_body.damping = if (bodyIsGrounded(player_body))
         PLAYER_DAMPING_GROUND
     else
@@ -277,13 +279,14 @@ fn bodyIsGrounded(body: *phiz.Body) bool {
 }
 
 fn bodiesOnContact(world: *phiz.World, event: *phiz.CollisionEvent) void {
-    _ = world;
     const layer_a = event.body_a.collision_filter.layer;
     const layer_b = event.body_b.collision_filter.layer;
-    if ((layer_a == CollisionLayer.PLAYER and layer_b == CollisionLayer.COINS) or (layer_a == CollisionLayer.COINS and layer_b == CollisionLayer.PLAYER)) {
+    if ((layer_a == CollisionLayer.PLAYER and layer_b == CollisionLayer.COINS) or
+        (layer_a == CollisionLayer.COINS and layer_b == CollisionLayer.PLAYER))
+    {
         coins_collected += 1;
         event.disable_physics = true;
-        // TODO: Destroy the body with collision layer `CollisionLayer.COINS`.
+        world.destroyBody(event.collision.body_b) catch unreachable;
     }
 }
 
@@ -291,7 +294,7 @@ fn renderCoinsCollected() void {
     var text_buf: [128]u8 = undefined;
     const coins_text = std.fmt.bufPrintZ(
         &text_buf,
-        "Coins: {d}",
+        "Coins collected: {d}",
         .{coins_collected},
     ) catch unreachable;
     common.renderTextLine(coins_text, 5);

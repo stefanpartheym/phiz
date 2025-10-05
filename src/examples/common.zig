@@ -202,22 +202,27 @@ pub fn renderHud(state: *State) void {
     const offset = m.Vec2_i32.new(30, 10);
     const font_size: i32 = 20;
     var text_buf: [128]u8 = undefined;
-    const bodies_text = std.fmt.bufPrintZ(
-        &text_buf,
-        "Bodies: {d}",
-        .{state.world.bodies.items.len},
-    ) catch unreachable;
+
     var line: i32 = 1;
     rl.drawFPS(
         offset.x(),
         font_size * line + offset.y() * (line + 1),
     );
+
     line += 1;
+    const bodies_count = state.world.bodies.items.len - state.world.free_body_indices.items.len;
+    const bodies_text = std.fmt.bufPrintZ(
+        &text_buf,
+        "Bodies: {d}",
+        .{bodies_count},
+    ) catch unreachable;
     renderTextLine(bodies_text, line);
+
     line += 1;
     if (state.debugger.frame_stepping_enabled) {
         renderTextLine("Frame stepping", line);
     }
+
     line += 1;
     if (state.debugger.isPhysicsTimeout()) {
         renderTextLine("Physics timeout", line);

@@ -27,6 +27,11 @@ pub const Config = struct {
     contact_listener: ContactListener = .init,
 };
 
+pub const BodyAccessError = error{
+    InvalidIndex,
+    StaleGeneration,
+};
+
 const Self = @This();
 
 allocator: std.mem.Allocator,
@@ -34,6 +39,15 @@ gravity: m.Vec2,
 terminal_velocity: f32,
 dt_accumulator: f32,
 bodies: std.ArrayList(Body),
+/// Generation counter for each body slot
+body_generations: std.ArrayList(BodyId.GenerationType),
+/// Active flag for each body slot
+/// TODO: Maybe merge this into the body_generations list?
+body_active: std.ArrayList(bool),
+/// List of free body indices that can be reused
+free_body_indices: std.ArrayList(BodyId.IndexType),
+/// Global generation counter
+next_generation: BodyId.GenerationType,
 /// dynamic/static collisions
 collisions_ds: std.ArrayList(Collision),
 /// dynamic/dynamic collisions
@@ -52,6 +66,10 @@ pub fn init(allocator: std.mem.Allocator, config: Config) Self {
         .terminal_velocity = config.terminal_velocity,
         .dt_accumulator = 0,
         .bodies = std.ArrayList(Body){},
+        .body_generations = std.ArrayList(BodyId.GenerationType){},
+        .body_active = std.ArrayList(bool){},
+        .free_body_indices = std.ArrayList(BodyId.IndexType){},
+        .next_generation = 0,
         .collisions_ds = std.ArrayList(Collision){},
         .collisions_dd = std.ArrayList(Collision){},
         .spatial_grid = SpatialHashGrid.init(allocator, config.spatial_grid_cell_size),
@@ -65,7 +83,21 @@ pub fn deinit(self: *Self) void {
     self.collisions_ds.deinit(self.allocator);
     self.collisions_dd.deinit(self.allocator);
     self.collision_events.deinit(self.allocator);
+    self.free_body_indices.deinit(self.allocator);
+    self.body_active.deinit(self.allocator);
+    self.body_generations.deinit(self.allocator);
     self.bodies.deinit(self.allocator);
+}
+
+pub fn clear(self: *Self) void {
+    self.spatial_grid.clear();
+    self.collisions_ds.clearRetainingCapacity();
+    self.collisions_dd.clearRetainingCapacity();
+    self.collision_events.clearRetainingCapacity();
+    self.free_body_indices.clearRetainingCapacity();
+    self.body_active.clearRetainingCapacity();
+    self.body_generations.clearRetainingCapacity();
+    self.bodies.clearRetainingCapacity();
 }
 
 pub fn update(self: *Self, timestep: f32, substeps: usize) !void {
@@ -76,7 +108,9 @@ pub fn update(self: *Self, timestep: f32, substeps: usize) !void {
 
     const zone_apply_forces = tracy.initZone(@src(), .{ .name = "update:apply_forces" });
     // Apply forces.
-    for (self.bodies.items) |*body| {
+    for (self.bodies.items, 0..) |*body, i| {
+        if (!self.isBodyActive(i)) continue;
+
         // Reset penetration from previous physics step.
         body.penetration = m.Vec2.zero();
         // Apply gravity and accelerate.
@@ -89,16 +123,18 @@ pub fn update(self: *Self, timestep: f32, substeps: usize) !void {
     // Integration and collision detection.
     for (0..substeps) |_| {
         // Integrate bodies.
-        for (self.bodies.items) |*body| {
+        for (self.bodies.items, 0..) |*body, i| {
+            if (!self.isBodyActive(i)) continue;
             body.integrate(substep);
         }
 
         // Detect and resolve collisions.
         try self.detectCollisions();
-        self.resolveCollisions();
+        try self.resolveCollisions();
 
         // Account for floating point inaccuracies.
-        for (self.bodies.items) |*body| {
+        for (self.bodies.items, 0..) |*body, i| {
+            if (!self.isBodyActive(i)) continue;
             if (body.velocity.length() < 0.1) {
                 body.velocity = m.Vec2.zero();
             }
@@ -107,7 +143,8 @@ pub fn update(self: *Self, timestep: f32, substeps: usize) !void {
 
     const zone_reset = tracy.initZone(@src(), .{ .name = "update:reset" });
     // Reset accelerations and clamp velocities.
-    for (self.bodies.items) |*body| {
+    for (self.bodies.items, 0..) |*body, i| {
+        if (!self.isBodyActive(i)) continue;
         body.acceleration = m.Vec2.zero();
         if (body.velocity.length() > self.terminal_velocity) {
             body.velocity = body.velocity.norm().scale(self.terminal_velocity);
@@ -116,13 +153,50 @@ pub fn update(self: *Self, timestep: f32, substeps: usize) !void {
     zone_reset.deinit();
 }
 
-pub fn addBody(self: *Self, body: Body) !BodyId {
-    try self.bodies.append(self.allocator, body);
-    return BodyId.new(self.bodies.items.len - 1);
+pub inline fn validateBodyId(self: *const Self, id: BodyId) BodyAccessError!void {
+    if (id.index >= self.bodies.items.len) return BodyAccessError.InvalidIndex;
+    if (self.body_generations.items[id.index] != id.generation) return BodyAccessError.StaleGeneration;
 }
 
-pub fn getBody(self: *const Self, handle: BodyId) *Body {
-    return &self.bodies.items[handle.index];
+pub inline fn isBodyActive(self: *const Self, index: BodyId.IndexType) bool {
+    if (index >= self.body_active.items.len) return false;
+    return self.body_active.items[index];
+}
+
+/// TODO: Rename to `createBody`.
+pub fn addBody(self: *Self, body: Body) !BodyId {
+    const index: BodyId.IndexType = if (self.free_body_indices.pop()) |free_index| blk: {
+        // Reuse a free index.
+        self.bodies.items[free_index] = body;
+        self.body_active.items[free_index] = true;
+        break :blk free_index;
+    } else blk: {
+        // Add new body to the end.
+        try self.bodies.append(self.allocator, body);
+        try self.body_generations.append(self.allocator, 0);
+        try self.body_active.append(self.allocator, true);
+        break :blk self.bodies.items.len - 1;
+    };
+
+    return BodyId.new(index, self.body_generations.items[index]);
+}
+
+pub fn getBody(self: *const Self, id: BodyId) BodyAccessError!*Body {
+    try self.validateBodyId(id);
+    return &self.bodies.items[id.index];
+}
+
+pub fn destroyBody(self: *Self, id: BodyId) !void {
+    try self.validateBodyId(id);
+    // Mark body as inactive.
+    self.body_active.items[id.index] = false;
+    // Remove from spatial grid to prevent phantom collisions.
+    self.spatial_grid.removeBody(id);
+    // Increment global generation counter and assign to this slot.
+    self.next_generation += 1;
+    self.body_generations.items[id.index] = self.next_generation;
+    // Add index to free list for reuse.
+    try self.free_body_indices.append(self.allocator, id.index);
 }
 
 fn detectCollisions(self: *Self) !void {
@@ -147,8 +221,9 @@ fn detectCollisionsBroadPhase(self: *World) ![]const SpatialHashGrid.BodyPair {
 
     // Incrementally update bodies that have moved.
     for (self.bodies.items, 0..) |*body, i| {
+        if (!self.isBodyActive(i)) continue;
         const aabb = body.getAabb();
-        try self.spatial_grid.updateBody(BodyId.new(i), aabb);
+        try self.spatial_grid.updateBody(BodyId.new(i, self.body_generations.items[i]), aabb);
     }
     zone_spatial_grid.deinit();
 
@@ -249,26 +324,26 @@ fn detectCollisionsNarrowPhase(self: *World, pairs: []const SpatialHashGrid.Body
     }
 }
 
-fn resolveCollisions(self: *Self) void {
+fn resolveCollisions(self: *Self) !void {
     const zone = tracy.initZone(@src(), .{});
     defer zone.deinit();
 
     // Resolve dynamic-static collisions first, then dynamic-dynamic collisions.
     // This ensures proper collision resolution order without sorting.
     for (self.collisions_ds.items) |collision| {
-        self.resolveDynamicStaticCollision(collision);
+        try self.resolveDynamicStaticCollision(collision);
     }
     for (self.collisions_dd.items) |collision| {
-        self.resolveDynamicDynamicCollision(collision);
+        try self.resolveDynamicDynamicCollision(collision);
     }
 }
 
-fn resolveDynamicStaticCollision(self: *Self, collision: Collision) void {
+fn resolveDynamicStaticCollision(self: *Self, collision: Collision) !void {
     const zone = tracy.initZone(@src(), .{});
     defer zone.deinit();
 
-    const body_a = self.getBody(collision.body_a);
-    const body_b = self.getBody(collision.body_b);
+    const body_a = try self.getBody(collision.body_a);
+    const body_b = try self.getBody(collision.body_b);
 
     // Determine which body is dynamic and move it out of collision
     if (body_a.isDynamic()) {
@@ -286,12 +361,12 @@ fn resolveDynamicStaticCollision(self: *Self, collision: Collision) void {
     }
 }
 
-fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) void {
+fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) !void {
     const zone = tracy.initZone(@src(), .{});
     defer zone.deinit();
 
-    const body_a = self.getBody(collision.body_a);
-    const body_b = self.getBody(collision.body_b);
+    const body_a = try self.getBody(collision.body_a);
+    const body_b = try self.getBody(collision.body_b);
 
     // Position correction:
     // Weight corrections based on the velocity of eacht body.
@@ -366,8 +441,8 @@ test "World.detectCollisions: Should detect collision between overlapping dynami
         .position = m.Vec2.new(1, 1),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
-    const body1 = world.getBody(body1_id);
-    const body2 = world.getBody(body2_id);
+    const body1 = try world.getBody(body1_id);
+    const body2 = try world.getBody(body2_id);
 
     try world.detectCollisions();
 
@@ -436,9 +511,9 @@ test "World.detectCollisions: Should accumulate penetrations correctly (use deep
         .position = m.Vec2.new(3, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
-    const body1 = world.getBody(body1_id);
-    const body2 = world.getBody(body2_id);
-    const body3 = world.getBody(body3_id);
+    const body1 = try world.getBody(body1_id);
+    const body2 = try world.getBody(body2_id);
+    const body3 = try world.getBody(body3_id);
 
     try world.detectCollisions();
 
@@ -578,9 +653,9 @@ test "World.detectCollisions: Should resolve dynamic vs static collision" {
     const original_pos = dynamic.position;
 
     try world.detectCollisions();
-    world.resolveCollisions();
+    try world.resolveCollisions();
 
-    const resolved_body = world.getBody(BodyId.new(0));
+    const resolved_body = try world.getBody(BodyId.new(0, 0));
     try std.testing.expect(!resolved_body.position.eql(original_pos));
 }
 
@@ -604,10 +679,10 @@ test "World.resolveCollisions: Should resolve dynamic vs dynamic collision" {
     const original_pos2 = body2.position;
 
     try world.detectCollisions();
-    world.resolveCollisions();
+    try world.resolveCollisions();
 
-    const resolved_body1 = world.getBody(BodyId.new(0));
-    const resolved_body2 = world.getBody(BodyId.new(1));
+    const resolved_body1 = try world.getBody(BodyId.new(0, 0));
+    const resolved_body2 = try world.getBody(BodyId.new(1, 0));
 
     // Both bodies should have moved.
     try std.testing.expect(!resolved_body1.position.eql(original_pos1));
@@ -622,7 +697,7 @@ test "World.update: Should clamp velocity to terminal velocity" {
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(1, 1) } },
     }));
-    var body = world.getBody(id);
+    var body = try world.getBody(id);
     // Set a very high acceleration to test clamping.
     body.acceleration = m.Vec2.new(-10000, 10000);
     try world.update(1, 1);
@@ -802,4 +877,168 @@ test "ContactListener: Should provide correct collision information in callback"
 
     const collision = world.collisions_ds.items[0];
     try std.testing.expectEqual(Collision.Type.dynamic_static, collision.type);
+}
+
+test "World.destroyBody: Should invalidate BodyId after destruction" {
+    var world = World.init(std.testing.allocator, .{});
+    defer world.deinit();
+
+    const body_id = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+
+    // Body should be accessible initially.
+    _ = try world.getBody(body_id);
+
+    // Destroy the body.
+    try world.destroyBody(body_id);
+
+    // Should now return StaleGeneration error.
+    try std.testing.expectError(BodyAccessError.StaleGeneration, world.getBody(body_id));
+}
+
+test "World.destroyBody: Should reuse indices efficiently" {
+    var world = World.init(std.testing.allocator, .{});
+    defer world.deinit();
+
+    // Add two bodies.
+    const body1_id = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+    const body2_id = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+
+    try std.testing.expectEqual(0, body1_id.index);
+    try std.testing.expectEqual(1, body2_id.index);
+    try std.testing.expectEqual(2, world.bodies.items.len);
+
+    // Destroy first body.
+    try world.destroyBody(body1_id);
+
+    // Add a new body - should reuse index 0.
+    const body3_id = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+
+    try std.testing.expectEqual(0, body3_id.index);
+    try std.testing.expectEqual(1, body3_id.generation); // Generation should be incremented.
+    try std.testing.expectEqual(2, world.bodies.items.len); // Array length unchanged.
+
+    // Old body1_id should still be invalid.
+    try std.testing.expectError(BodyAccessError.StaleGeneration, world.getBody(body1_id));
+
+    // New body3_id should be valid.
+    _ = try world.getBody(body3_id);
+
+    // body2_id should still be valid.
+    _ = try world.getBody(body2_id);
+}
+
+test "World.destroyBody: Should handle invalid BodyId" {
+    var world = World.init(std.testing.allocator, .{});
+    defer world.deinit();
+
+    // Invalid index.
+    const invalid_id = BodyId.new(999, 0);
+    try std.testing.expectError(BodyAccessError.InvalidIndex, world.destroyBody(invalid_id));
+
+    // Add and destroy a body.
+    const body_id = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+    try world.destroyBody(body_id);
+
+    // Try to destroy again with stale generation.
+    try std.testing.expectError(BodyAccessError.StaleGeneration, world.destroyBody(body_id));
+}
+
+test "World.getBody: Should handle invalid indices" {
+    var world = World.init(std.testing.allocator, .{});
+    defer world.deinit();
+
+    const invalid_id = BodyId.new(999, 0);
+    try std.testing.expectError(BodyAccessError.InvalidIndex, world.getBody(invalid_id));
+}
+
+test "World.addBody: Should handle multiple destroy/create cycles" {
+    var world = World.init(std.testing.allocator, .{});
+    defer world.deinit();
+
+    var body_ids: [5]BodyId = undefined;
+
+    // Create 5 bodies.
+    for (0..5) |i| {
+        body_ids[i] = try world.addBody(Body.new(.dynamic, .{
+            .position = m.Vec2.new(@floatFromInt(i), @floatFromInt(i)),
+            .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        }));
+        try std.testing.expectEqual(i, body_ids[i].index);
+        try std.testing.expectEqual(0, body_ids[i].generation);
+    }
+
+    // Destroy bodies 1 and 3.
+    try world.destroyBody(body_ids[1]);
+    try world.destroyBody(body_ids[3]);
+
+    // Create 2 new bodies - should reuse indices 3 and 1 (in that order due to stack).
+    const new_body1 = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(10, 10),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+    const new_body2 = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(11, 11),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+    }));
+
+    try std.testing.expectEqual(3, new_body1.index);
+    try std.testing.expectEqual(2, new_body1.generation); // Second destroy, so generation 2
+    try std.testing.expectEqual(1, new_body2.index);
+    try std.testing.expectEqual(1, new_body2.generation); // First destroy, so generation 1
+
+    // Verify old IDs are invalid.
+    try std.testing.expectError(BodyAccessError.StaleGeneration, world.getBody(body_ids[1]));
+    try std.testing.expectError(BodyAccessError.StaleGeneration, world.getBody(body_ids[3]));
+
+    // Verify valid IDs still work.
+    _ = try world.getBody(body_ids[0]);
+    _ = try world.getBody(body_ids[2]);
+    _ = try world.getBody(body_ids[4]);
+    _ = try world.getBody(new_body1);
+    _ = try world.getBody(new_body2);
+}
+
+test "World.destroyBody: Should remove body from spatial grid to prevent phantom collisions" {
+    var world = World.init(std.testing.allocator, .{});
+    defer world.deinit();
+
+    // Create two overlapping bodies.
+    const body1_id = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(0, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
+    }));
+    _ = try world.addBody(Body.new(.dynamic, .{
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
+    }));
+
+    // Run collision detection - should find 1 collision.
+    try world.detectCollisions();
+    try std.testing.expectEqual(1, world.collisions_dd.items.len);
+    try std.testing.expectEqual(1, world.collision_events.items.len);
+
+    // Destroy the first body.
+    try world.destroyBody(body1_id);
+
+    // Run collision detection again - should find 0 collisions.
+    // This will fail with the current implementation because body1
+    // is still in the spatial grid and will create phantom collision pairs.
+    try world.detectCollisions();
+    try std.testing.expectEqual(0, world.collisions_dd.items.len);
+    try std.testing.expectEqual(0, world.collision_events.items.len);
 }

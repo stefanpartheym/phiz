@@ -83,9 +83,8 @@ fn setup(state: *State) !void {
         .position = display_half_size,
         .shape = .{ .circle = .{ .radius = 25 } },
         .restitution = 0.8,
+        .damping = PLAYER_DAMPING,
     }));
-    const player_body = state.world.getBody(state.player);
-    player_body.damping = PLAYER_DAMPING;
 }
 
 fn reset(state: *State) !void {
@@ -166,7 +165,7 @@ fn update(state: *State, dt: f32) !void {
     if (state.physics_enabled) {
         state.accumulator += dt;
         const run_physics = state.accumulator >= PHYSICS_TIMESTEP;
-        const player_body = state.world.getBody(state.player);
+        const player_body = try state.world.getBody(state.player);
         while (state.accumulator >= PHYSICS_TIMESTEP) {
             state.accumulator -= PHYSICS_TIMESTEP;
             {
