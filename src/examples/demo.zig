@@ -28,6 +28,7 @@ pub fn main() !void {
             .physics_timeout = 10,
             .frame_stepping_enabled = true,
         },
+        .physics_config = .{ .spatial_grid_cell_size = 40 },
     });
     defer state.deinit();
     try setup(&state);
