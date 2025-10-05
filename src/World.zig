@@ -4,6 +4,8 @@ const Body = @import("./Body.zig");
 const BodyId = @import("./BodyId.zig");
 const Circle = @import("./Circle.zig");
 const Collision = @import("./Collision.zig");
+const CollisionEvent = @import("./CollisionEvent.zig");
+const ContactListener = @import("./ContactListener.zig");
 const SpatialHashGrid = @import("./SpatialHashGrid.zig");
 const tracy = @import("tracy");
 
@@ -20,6 +22,8 @@ pub const Config = struct {
     /// Cell size for spatial hash grid.
     /// Should be roughly the size of the average game object.
     spatial_grid_cell_size: f32 = 64,
+    /// Contact listener for collision callbacks.
+    contact_listener: ContactListener = .init,
 };
 
 const Self = @This();
@@ -29,11 +33,16 @@ gravity: m.Vec2,
 terminal_velocity: f32,
 dt_accumulator: f32,
 bodies: std.ArrayList(Body),
-/// dynamic-static collisions
+/// dynamic/static collisions
 collisions_ds: std.ArrayList(Collision),
-/// dynamic-dynamic collisions
+/// dynamic/dynamic collisions
 collisions_dd: std.ArrayList(Collision),
+/// Spatial hash grid for broad phase collision detection
 spatial_grid: SpatialHashGrid,
+/// Contact listener for custom collision callbacks
+contact_listener: ContactListener,
+/// List of current collision events being processed
+collision_events: std.ArrayList(CollisionEvent),
 
 pub fn init(allocator: std.mem.Allocator, config: Config) Self {
     return Self{
@@ -45,6 +54,8 @@ pub fn init(allocator: std.mem.Allocator, config: Config) Self {
         .collisions_ds = std.ArrayList(Collision){},
         .collisions_dd = std.ArrayList(Collision){},
         .spatial_grid = SpatialHashGrid.init(allocator, config.spatial_grid_cell_size),
+        .contact_listener = config.contact_listener,
+        .collision_events = std.ArrayList(CollisionEvent){},
     };
 }
 
@@ -52,6 +63,7 @@ pub fn deinit(self: *Self) void {
     self.spatial_grid.deinit();
     self.collisions_ds.deinit(self.allocator);
     self.collisions_dd.deinit(self.allocator);
+    self.collision_events.deinit(self.allocator);
     self.bodies.deinit(self.allocator);
 }
 
@@ -149,14 +161,21 @@ fn detectCollisionsNarrowPhase(self: *World, pairs: []const SpatialHashGrid.Body
     const zone = tracy.initZone(@src(), .{});
     defer zone.deinit();
 
+    // Clear collision events from previous frame
+    self.collision_events.clearRetainingCapacity();
+
     for (pairs) |pair| {
         const body_a = &self.bodies.items[pair.a.index];
         const body_b = &self.bodies.items[pair.b.index];
 
-        // Skip static vs static (should never happen anyway)
+        // Skip static vs static pairs.
+        // TODO: Move this check to broad phase.
         if (body_a.isStatic() and body_b.isStatic()) continue;
 
-        // Detect collision based on shape types
+        // Check if bodies can collide.
+        if (!Body.CollisionFilter.canCollide(body_a.collision_filter, body_b.collision_filter)) continue;
+
+        // Detect collision based on shape types.
         const mtv = switch (body_a.shape) {
             .rectangle => switch (body_b.shape) {
                 .rectangle => blk: {
@@ -190,21 +209,41 @@ fn detectCollisionsNarrowPhase(self: *World, pairs: []const SpatialHashGrid.Body
         };
 
         if (mtv) |collision_mtv| {
+            const normal = collision_mtv.norm();
             const collision = Collision{
                 .type = Collision.determineType(body_a, body_b),
                 .body_a = pair.a,
                 .body_b = pair.b,
                 .mtv = collision_mtv,
-                .normal = collision_mtv.norm(),
+                .normal = normal,
             };
-            // Append collision to appropriate list based on its type.
-            switch (collision.type) {
-                .dynamic_static => try self.collisions_ds.append(self.allocator, collision),
-                .dynamic_dynamic => try self.collisions_dd.append(self.allocator, collision),
+            var event = CollisionEvent{
+                .body_a = body_a,
+                .body_b = body_b,
+                .collision = collision,
+                .disable_physics = false,
+            };
+
+            try self.collision_events.append(self.allocator, event);
+
+            // Fire on_contact callback if present.
+            // TODO: Collect all collisions first and fire all callbacks at the end.
+            // After that, add collisions to appropriate lists.
+            if (self.contact_listener.on_contact) |callback| {
+                callback(self, &event);
             }
-            // Store the penetration in both bodies.
-            body_a.accumulatePenetration(collision_mtv);
-            body_b.accumulatePenetration(collision_mtv.negate());
+
+            // Add collision only, if physics were not disabled in on_contact callback.
+            if (!event.disable_physics) {
+                // Append collision to appropriate list based on its type.
+                switch (collision.type) {
+                    .dynamic_static => try self.collisions_ds.append(self.allocator, collision),
+                    .dynamic_dynamic => try self.collisions_dd.append(self.allocator, collision),
+                }
+                // Store the penetration in both bodies.
+                body_a.accumulatePenetration(collision_mtv);
+                body_b.accumulatePenetration(collision_mtv.negate());
+            }
         }
     }
 }

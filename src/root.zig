@@ -4,4 +4,5 @@ pub const Body = @import("./Body.zig");
 pub const BodyId = @import("./BodyId.zig");
 pub const Circle = @import("./Circle.zig");
 pub const Collision = @import("./Collision.zig");
+pub const CollisionEvent = @import("./CollisionEvent.zig");
 pub const World = @import("./World.zig");

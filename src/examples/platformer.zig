@@ -14,6 +14,14 @@ const PLAYER_SPEED_AIR = 150;
 const PLAYER_DAMPING_GROUND = 3;
 const PLAYER_DAMPING_AIR = 0;
 
+const CollisionLayer = struct {
+    pub const STATIC_WORLD: u16 = 1 << 0;
+    pub const PLAYER: u16 = 1 << 1;
+    pub const COINS: u16 = 1 << 2;
+};
+
+var coins_collected: usize = 0;
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -24,7 +32,11 @@ pub fn main() !void {
     rl.initWindow(DISPLAY_SIZE.x(), DISPLAY_SIZE.y(), "phiz example: platformer");
     defer rl.closeWindow();
 
-    var state = State.init(allocator, .{});
+    var state = State.init(allocator, .{
+        .physics_config = .{
+            .contact_listener = .{ .on_contact = bodiesOnContact },
+        },
+    });
     defer state.deinit();
     try setup(&state);
 
@@ -42,45 +54,108 @@ pub fn main() !void {
 fn setup(state: *State) !void {
     const display_size_f32 = DISPLAY_SIZE.cast(f32);
     const collider_size = 20;
-    // Moving body
+    const collision_filter_statics = phiz.Body.CollisionFilter{
+        .layer = CollisionLayer.STATIC_WORLD,
+        .mask = CollisionLayer.STATIC_WORLD | CollisionLayer.PLAYER,
+    };
+
+    // Movable body
     _ = try state.world.addBody(phiz.Body.new(.dynamic, .{
         .position = m.Vec2.new(display_size_f32.x() - 100, 100),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(50, 50) } },
         .restitution = 0.8,
         .damping = 1.5,
+        .collision_filter = collision_filter_statics,
     }));
 
     // Ground
     _ = try state.world.addBody(phiz.Body.new(.static, .{
         .position = m.Vec2.new(0, display_size_f32.y() - collider_size),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(display_size_f32.x(), collider_size) } },
+        .collision_filter = collision_filter_statics,
     }));
     // Left wall
     _ = try state.world.addBody(phiz.Body.new(.static, .{
         .position = m.Vec2.new(0, display_size_f32.y() / 2),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size_f32.y() / 2) } },
+        .collision_filter = collision_filter_statics,
     }));
     // Right wall
     _ = try state.world.addBody(phiz.Body.new(.static, .{
         .position = m.Vec2.new(display_size_f32.x() - collider_size, display_size_f32.y() / 2),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size_f32.y() / 2) } },
+        .collision_filter = collision_filter_statics,
     }));
 
     // Platforms
     const platform_shape = phiz.Body.Shape{ .rectangle = .{ .size = m.Vec2.new(200, collider_size / 2) } };
-    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = m.Vec2.new(450, 450), .shape = platform_shape }));
-    _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = m.Vec2.new(50, 300), .shape = platform_shape }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(450, 450),
+        .shape = platform_shape,
+        .collision_filter = collision_filter_statics,
+    }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(50, 300),
+        .shape = platform_shape,
+        .collision_filter = collision_filter_statics,
+    }));
 
     // Player
     state.player = try state.world.addBody(phiz.Body.new(.dynamic, .{
-        .position = m.Vec2.new(100, 100),
+        .position = m.Vec2.new(100, 175),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(25, 50) } },
         .restitution = 0.8,
+        .collision_filter = .{ .layer = CollisionLayer.PLAYER, .mask = CollisionLayer.STATIC_WORLD | CollisionLayer.COINS },
+    }));
+
+    // Coins
+    const coin_shape = phiz.Body.Shape{ .circle = .{ .radius = 10 } };
+    const coin_collision_filter = phiz.Body.CollisionFilter{ .layer = CollisionLayer.COINS, .mask = CollisionLayer.PLAYER };
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(475, 350),
+        .shape = coin_shape,
+        .collision_filter = coin_collision_filter,
+    }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(525, 350),
+        .shape = coin_shape,
+        .collision_filter = coin_collision_filter,
+    }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(575, 350),
+        .shape = coin_shape,
+        .collision_filter = coin_collision_filter,
+    }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(625, 350),
+        .shape = coin_shape,
+        .collision_filter = coin_collision_filter,
+    }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(75, 150),
+        .shape = coin_shape,
+        .collision_filter = coin_collision_filter,
+    }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(125, 150),
+        .shape = coin_shape,
+        .collision_filter = coin_collision_filter,
+    }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(175, 150),
+        .shape = coin_shape,
+        .collision_filter = coin_collision_filter,
+    }));
+    _ = try state.world.addBody(phiz.Body.new(.static, .{
+        .position = m.Vec2.new(225, 150),
+        .shape = coin_shape,
+        .collision_filter = coin_collision_filter,
     }));
 }
 
 fn reset(state: *State) !void {
     state.world.bodies.clearRetainingCapacity();
+    coins_collected = 0;
     try setup(state);
 }
 
@@ -107,7 +182,15 @@ fn input(state: *State) !void {
 
     if (rl.isMouseButtonPressed(.left) or rl.isMouseButtonPressed(.right)) {
         const mouse_pos = rl.getMousePosition();
-        _ = try state.world.addBody(phiz.Body.new(if (rl.isMouseButtonPressed(.left)) .dynamic else .static, .{
+        const body_type: phiz.Body.BodyType = if (rl.isMouseButtonPressed(.left)) .dynamic else .static;
+        const collision_filter: phiz.Body.CollisionFilter = if (body_type == .static)
+            .{
+                .layer = CollisionLayer.COINS,
+                .mask = CollisionLayer.PLAYER,
+            }
+        else
+            .init;
+        _ = try state.world.addBody(phiz.Body.new(body_type, .{
             .position = m.Vec2.new(mouse_pos.x, mouse_pos.y),
             .shape = if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift))
                 .{ .circle = .{ .radius = 12.5 } }
@@ -115,6 +198,7 @@ fn input(state: *State) !void {
                 .{ .rectangle = .{ .size = m.Vec2.new(25, 25) } },
             .restitution = if (rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt)) 0.5 else 0,
             .damping = 1.5,
+            .collision_filter = collision_filter,
         }));
     }
 
@@ -175,6 +259,7 @@ fn render(state: *State) void {
         common.renderBodyDebug(body, index);
     }
     common.renderHud(state);
+    renderCoinsCollected();
     rl.endDrawing();
 }
 
@@ -209,4 +294,34 @@ fn updatePlayerDamping(state: *State) void {
 
 fn bodyIsGrounded(body: *phiz.Body) bool {
     return body.penetration.y() < 0;
+}
+
+fn bodiesOnContact(world: *phiz.World, event: *phiz.CollisionEvent) void {
+    _ = world;
+    const layer_a = event.body_a.collision_filter.layer;
+    const layer_b = event.body_b.collision_filter.layer;
+    if ((layer_a == CollisionLayer.PLAYER and layer_b == CollisionLayer.COINS) or (layer_a == CollisionLayer.COINS and layer_b == CollisionLayer.PLAYER)) {
+        coins_collected += 1;
+        event.disable_physics = true;
+        // TODO: Destroy the body with collision layer `CollisionLayer.COINS`.
+    }
+}
+
+fn renderCoinsCollected() void {
+    const offset = m.Vec2_i32.new(30, 10);
+    const font_size: i32 = 20;
+    var text_buf: [128]u8 = undefined;
+    const coins_text = std.fmt.bufPrintZ(
+        &text_buf,
+        "Coins: {d}",
+        .{coins_collected},
+    ) catch unreachable;
+    const line = 5;
+    rl.drawText(
+        coins_text,
+        offset.x(),
+        font_size * line + offset.y() * (line + 1),
+        font_size,
+        rl.Color.ray_white,
+    );
 }

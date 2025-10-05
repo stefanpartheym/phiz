@@ -11,12 +11,44 @@ pub const Shape = union(enum) {
     circle: struct { radius: f32 },
 };
 
+/// Collision filter to determine what bodies can collide.
+pub const CollisionFilter = struct {
+    /// Default collision filter: Collide with everything.
+    pub const init: @This() = .{
+        .layer = 0x0001,
+        .mask = 0xFFFF,
+        .group_index = 0,
+    };
+
+    /// What layer this body belongs to (single bit)
+    layer: u16,
+    /// What layers this body can collide with (bitmask)
+    mask: u16,
+    /// Group index for fine-grained control:
+    /// - Positive: bodies in same group always collide
+    /// - Negative: bodies in same group never collide
+    /// - Zero: use layer/mask filtering
+    group_index: i16 = 0,
+
+    /// Check if two filters can collide.
+    pub fn canCollide(filter_a: @This(), filter_b: @This()) bool {
+        // Group filtering takes precedence
+        if (filter_a.group_index != 0 and filter_a.group_index == filter_b.group_index) {
+            return filter_a.group_index > 0;
+        }
+        // Layer/mask filtering
+        return (filter_a.mask & filter_b.layer) != 0 and
+            (filter_b.mask & filter_a.layer) != 0;
+    }
+};
+
 pub const Config = struct {
     position: m.Vec2,
     shape: Shape,
     mass: f32 = 1,
     damping: f32 = 0,
     restitution: f32 = 0,
+    collision_filter: CollisionFilter = .init,
 };
 
 const Self = @This();
@@ -35,6 +67,8 @@ inv_mass: f32,
 restitution: f32,
 /// Contains the deepest penetration caused by collisions on each axis.
 penetration: m.Vec2,
+/// Collision filtering data
+collision_filter: CollisionFilter,
 
 pub fn new(body_type: BodyType, config: Config) Self {
     return Self{
@@ -54,6 +88,7 @@ pub fn new(body_type: BodyType, config: Config) Self {
         },
         .restitution = config.restitution,
         .penetration = m.Vec2.zero(),
+        .collision_filter = config.collision_filter,
     };
 }
 
