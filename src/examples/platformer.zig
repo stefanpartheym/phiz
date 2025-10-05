@@ -60,7 +60,7 @@ fn setup(state: *State) !void {
     };
 
     // Movable body
-    _ = try state.world.addBody(phiz.Body.new(.dynamic, .{
+    _ = try state.world.createBody(phiz.Body.new(.dynamic, .{
         .position = m.Vec2.new(display_size_f32.x() - 100, 100),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(50, 50) } },
         .restitution = 0.8,
@@ -69,19 +69,19 @@ fn setup(state: *State) !void {
     }));
 
     // Ground
-    _ = try state.world.addBody(phiz.Body.new(.static, .{
+    _ = try state.world.createBody(phiz.Body.new(.static, .{
         .position = m.Vec2.new(0, display_size_f32.y() - collider_size),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(display_size_f32.x(), collider_size) } },
         .collision_filter = collision_filter_statics,
     }));
     // Left wall
-    _ = try state.world.addBody(phiz.Body.new(.static, .{
+    _ = try state.world.createBody(phiz.Body.new(.static, .{
         .position = m.Vec2.new(0, display_size_f32.y() / 2),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size_f32.y() / 2) } },
         .collision_filter = collision_filter_statics,
     }));
     // Right wall
-    _ = try state.world.addBody(phiz.Body.new(.static, .{
+    _ = try state.world.createBody(phiz.Body.new(.static, .{
         .position = m.Vec2.new(display_size_f32.x() - collider_size, display_size_f32.y() / 2),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size_f32.y() / 2) } },
         .collision_filter = collision_filter_statics,
@@ -89,19 +89,19 @@ fn setup(state: *State) !void {
 
     // Platforms
     const platform_shape = phiz.Body.Shape{ .rectangle = .{ .size = m.Vec2.new(200, collider_size / 2) } };
-    _ = try state.world.addBody(phiz.Body.new(.static, .{
+    _ = try state.world.createBody(phiz.Body.new(.static, .{
         .position = m.Vec2.new(450, 450),
         .shape = platform_shape,
         .collision_filter = collision_filter_statics,
     }));
-    _ = try state.world.addBody(phiz.Body.new(.static, .{
+    _ = try state.world.createBody(phiz.Body.new(.static, .{
         .position = m.Vec2.new(50, 300),
         .shape = platform_shape,
         .collision_filter = collision_filter_statics,
     }));
 
     // Player
-    state.player = try state.world.addBody(phiz.Body.new(.dynamic, .{
+    state.player = try state.world.createBody(phiz.Body.new(.dynamic, .{
         .position = m.Vec2.new(100, 175),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(25, 50) } },
         .restitution = 0.8,
@@ -116,7 +116,7 @@ fn setup(state: *State) !void {
     for (0..4) |i| {
         const i_f32: f32 = @floatFromInt(i);
         const offset = m.Vec2.new(i_f32 * 50, 0);
-        _ = try state.world.addBody(phiz.Body.new(.static, .{
+        _ = try state.world.createBody(phiz.Body.new(.static, .{
             .position = coin_left_initial_pos.add(offset),
             .shape = coin_shape,
             .collision_filter = coin_collision_filter,
@@ -125,7 +125,7 @@ fn setup(state: *State) !void {
     for (0..4) |i| {
         const i_f32: f32 = @floatFromInt(i);
         const offset = m.Vec2.new(i_f32 * 50, 0);
-        _ = try state.world.addBody(phiz.Body.new(.static, .{
+        _ = try state.world.createBody(phiz.Body.new(.static, .{
             .position = coin_right_initial_pos.add(offset),
             .shape = coin_shape,
             .collision_filter = coin_collision_filter,
@@ -170,7 +170,7 @@ fn input(state: *State) !void {
             }
         else
             .init;
-        _ = try state.world.addBody(phiz.Body.new(body_type, .{
+        _ = try state.world.createBody(phiz.Body.new(body_type, .{
             .position = m.Vec2.new(mouse_pos.x, mouse_pos.y),
             .shape = if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift))
                 .{ .circle = .{ .radius = 12.5 } }
