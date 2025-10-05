@@ -111,46 +111,26 @@ fn setup(state: *State) !void {
     // Coins
     const coin_shape = phiz.Body.Shape{ .circle = .{ .radius = 10 } };
     const coin_collision_filter = phiz.Body.CollisionFilter{ .layer = CollisionLayer.COINS, .mask = CollisionLayer.PLAYER };
-    _ = try state.world.addBody(phiz.Body.new(.static, .{
-        .position = m.Vec2.new(475, 350),
-        .shape = coin_shape,
-        .collision_filter = coin_collision_filter,
-    }));
-    _ = try state.world.addBody(phiz.Body.new(.static, .{
-        .position = m.Vec2.new(525, 350),
-        .shape = coin_shape,
-        .collision_filter = coin_collision_filter,
-    }));
-    _ = try state.world.addBody(phiz.Body.new(.static, .{
-        .position = m.Vec2.new(575, 350),
-        .shape = coin_shape,
-        .collision_filter = coin_collision_filter,
-    }));
-    _ = try state.world.addBody(phiz.Body.new(.static, .{
-        .position = m.Vec2.new(625, 350),
-        .shape = coin_shape,
-        .collision_filter = coin_collision_filter,
-    }));
-    _ = try state.world.addBody(phiz.Body.new(.static, .{
-        .position = m.Vec2.new(75, 150),
-        .shape = coin_shape,
-        .collision_filter = coin_collision_filter,
-    }));
-    _ = try state.world.addBody(phiz.Body.new(.static, .{
-        .position = m.Vec2.new(125, 150),
-        .shape = coin_shape,
-        .collision_filter = coin_collision_filter,
-    }));
-    _ = try state.world.addBody(phiz.Body.new(.static, .{
-        .position = m.Vec2.new(175, 150),
-        .shape = coin_shape,
-        .collision_filter = coin_collision_filter,
-    }));
-    _ = try state.world.addBody(phiz.Body.new(.static, .{
-        .position = m.Vec2.new(225, 150),
-        .shape = coin_shape,
-        .collision_filter = coin_collision_filter,
-    }));
+    const coin_left_initial_pos = m.Vec2.new(75, 150);
+    const coin_right_initial_pos = m.Vec2.new(475, 350);
+    for (0..4) |i| {
+        const i_f32: f32 = @floatFromInt(i);
+        const offset = m.Vec2.new(i_f32 * 50, 0);
+        _ = try state.world.addBody(phiz.Body.new(.static, .{
+            .position = coin_left_initial_pos.add(offset),
+            .shape = coin_shape,
+            .collision_filter = coin_collision_filter,
+        }));
+    }
+    for (0..4) |i| {
+        const i_f32: f32 = @floatFromInt(i);
+        const offset = m.Vec2.new(i_f32 * 50, 0);
+        _ = try state.world.addBody(phiz.Body.new(.static, .{
+            .position = coin_right_initial_pos.add(offset),
+            .shape = coin_shape,
+            .collision_filter = coin_collision_filter,
+        }));
+    }
 }
 
 fn reset(state: *State) !void {
@@ -308,20 +288,11 @@ fn bodiesOnContact(world: *phiz.World, event: *phiz.CollisionEvent) void {
 }
 
 fn renderCoinsCollected() void {
-    const offset = m.Vec2_i32.new(30, 10);
-    const font_size: i32 = 20;
     var text_buf: [128]u8 = undefined;
     const coins_text = std.fmt.bufPrintZ(
         &text_buf,
         "Coins: {d}",
         .{coins_collected},
     ) catch unreachable;
-    const line = 5;
-    rl.drawText(
-        coins_text,
-        offset.x(),
-        font_size * line + offset.y() * (line + 1),
-        font_size,
-        rl.Color.ray_white,
-    );
+    common.renderTextLine(coins_text, 5);
 }

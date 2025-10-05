@@ -186,6 +186,18 @@ pub fn renderBodyDebug(body: phiz.Body, index: usize) void {
     rl.drawText(text, text_pos.x(), text_pos.y(), 6, rl.Color.ray_white);
 }
 
+pub fn renderTextLine(text: [:0]const u8, line: i32) void {
+    const offset = m.Vec2_i32.new(30, 10);
+    const font_size: i32 = 20;
+    rl.drawText(
+        text,
+        offset.x(),
+        font_size * line + offset.y() * (line + 1),
+        font_size,
+        rl.Color.ray_white,
+    );
+}
+
 pub fn renderHud(state: *State) void {
     const offset = m.Vec2_i32.new(30, 10);
     const font_size: i32 = 20;
@@ -201,31 +213,13 @@ pub fn renderHud(state: *State) void {
         font_size * line + offset.y() * (line + 1),
     );
     line += 1;
-    rl.drawText(
-        bodies_text,
-        offset.x(),
-        font_size * line + offset.y() * (line + 1),
-        font_size,
-        rl.Color.ray_white,
-    );
+    renderTextLine(bodies_text, line);
     line += 1;
     if (state.debugger.frame_stepping_enabled) {
-        rl.drawText(
-            "Frame stepping",
-            offset.x(),
-            font_size * line + offset.y() * (line + 1),
-            font_size,
-            rl.Color.ray_white,
-        );
+        renderTextLine("Frame stepping", line);
     }
     line += 1;
     if (state.debugger.isPhysicsTimeout()) {
-        rl.drawText(
-            "Physics timeout",
-            offset.x(),
-            font_size * line + offset.y() * (line + 1),
-            font_size,
-            rl.Color.ray_white,
-        );
+        renderTextLine("Physics timeout", line);
     }
 }
