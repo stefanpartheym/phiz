@@ -139,10 +139,8 @@ fn detectCollisionsBroadPhase(self: *World) ![]const SpatialHashGrid.BodyPair {
     }
     zone_spatial_grid.deinit();
 
-    const zone_pairs = tracy.initZone(@src(), .{ .name = "detectCollisionsBroadPhase:get_pairs" });
     // Get potential collision pairs from the spatial grid
     const pairs = try self.spatial_grid.getPairs();
-    zone_pairs.deinit();
 
     return pairs;
 }
