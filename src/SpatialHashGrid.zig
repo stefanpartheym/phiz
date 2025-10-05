@@ -156,9 +156,6 @@ non_empty_cells: std.ArrayList(*std.ArrayList(BodyId)),
 // Incremental update tracking
 body_positions: std.ArrayList(m.Vec2),
 body_cells: std.ArrayList(std.ArrayList(GridCoord)),
-// Memory pool for reduced allocations
-cell_pool: std.ArrayList(std.ArrayList(BodyId)),
-coord_pool: std.ArrayList(std.ArrayList(GridCoord)),
 
 pub fn init(allocator: std.mem.Allocator, cell_size: f32) Self {
     return Self{
@@ -170,8 +167,6 @@ pub fn init(allocator: std.mem.Allocator, cell_size: f32) Self {
         .non_empty_cells = std.ArrayList(*std.ArrayList(BodyId)){},
         .body_positions = std.ArrayList(m.Vec2){},
         .body_cells = std.ArrayList(std.ArrayList(GridCoord)){},
-        .cell_pool = std.ArrayList(std.ArrayList(BodyId)){},
-        .coord_pool = std.ArrayList(std.ArrayList(GridCoord)){},
     };
 }
 
@@ -189,14 +184,6 @@ pub fn deinit(self: *Self) void {
         cell_list.deinit(self.allocator);
     }
     self.body_cells.deinit(self.allocator);
-    for (self.cell_pool.items) |*cell_list| {
-        cell_list.deinit(self.allocator);
-    }
-    self.cell_pool.deinit(self.allocator);
-    for (self.coord_pool.items) |*coord_list| {
-        coord_list.deinit(self.allocator);
-    }
-    self.coord_pool.deinit(self.allocator);
 }
 
 pub fn clear(self: *Self) void {
@@ -204,6 +191,11 @@ pub fn clear(self: *Self) void {
     while (iterator.next()) |entry| {
         entry.value_ptr.clearRetainingCapacity();
     }
+    self.body_positions.clearRetainingCapacity();
+    for (self.body_cells.items) |*cell_list| {
+        cell_list.deinit(self.allocator);
+    }
+    self.body_cells.clearRetainingCapacity();
 }
 
 /// Inserts a body into the grid based on its AABB.

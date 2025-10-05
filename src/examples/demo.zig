@@ -107,7 +107,7 @@ fn spawnDynamicBodies(state: *State, count: usize, shape: phiz.Body.Shape, offse
 
 fn reset(state: *State) !void {
     state.debugger.physics_time = 0;
-    state.world.bodies.clearRetainingCapacity();
+    state.world.clear();
     try setup(state);
 }
 

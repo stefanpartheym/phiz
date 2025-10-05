@@ -134,8 +134,8 @@ fn setup(state: *State) !void {
 }
 
 fn reset(state: *State) !void {
-    state.world.clear();
     coins_collected = 0;
+    state.world.clear();
     try setup(state);
 }
 

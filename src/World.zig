@@ -90,6 +90,8 @@ pub fn deinit(self: *Self) void {
 }
 
 pub fn clear(self: *Self) void {
+    self.dt_accumulator = 0;
+    self.next_generation = 0;
     self.spatial_grid.clear();
     self.collisions_ds.clearRetainingCapacity();
     self.collisions_dd.clearRetainingCapacity();

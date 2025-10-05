@@ -88,7 +88,7 @@ fn setup(state: *State) !void {
 }
 
 fn reset(state: *State) !void {
-    state.world.bodies.clearRetainingCapacity();
+    state.world.clear();
     try setup(state);
 }
 
