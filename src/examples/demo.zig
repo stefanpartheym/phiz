@@ -79,10 +79,12 @@ fn setup(state: *State) !void {
     _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = m.Vec2.new(collider_left, 300), .shape = circle_shape }));
     _ = try state.world.addBody(phiz.Body.new(.static, .{ .position = m.Vec2.new(collider_right, 300), .shape = circle_shape }));
 
-    try spawnDynamicBodies(state, 25, dynamic_shape_rect, m.Vec2.new(collider_left, 0));
-    try spawnDynamicBodies(state, 25, dynamic_shape_circ, m.Vec2.new(collider_left, -1000));
-    try spawnDynamicBodies(state, 25, dynamic_shape_rect, m.Vec2.new(collider_right, 0));
-    try spawnDynamicBodies(state, 25, dynamic_shape_circ, m.Vec2.new(collider_right, -1000));
+    const bodies_per_group = 50;
+    const offset = -2000;
+    try spawnDynamicBodies(state, bodies_per_group, dynamic_shape_rect, m.Vec2.new(collider_left, 0));
+    try spawnDynamicBodies(state, bodies_per_group, dynamic_shape_circ, m.Vec2.new(collider_left, offset));
+    try spawnDynamicBodies(state, bodies_per_group, dynamic_shape_rect, m.Vec2.new(collider_right, 0));
+    try spawnDynamicBodies(state, bodies_per_group, dynamic_shape_circ, m.Vec2.new(collider_right, offset));
 }
 
 fn spawnDynamicBodies(state: *State, count: usize, shape: phiz.Body.Shape, offset: m.Vec2) !void {

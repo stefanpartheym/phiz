@@ -56,12 +56,93 @@ const CellHashMap = std.HashMap(
     std.hash_map.default_max_load_percentage,
 );
 
-const PairHashMap = std.HashMap(
-    u64,
-    void,
-    std.hash_map.AutoContext(u64),
-    std.hash_map.default_max_load_percentage,
-);
+/// Fast hash set specialized for u64 keys (pair IDs).
+const FastPairSet = struct {
+    buckets: []?u64,
+    capacity: usize,
+    count: usize,
+    allocator: std.mem.Allocator,
+
+    const EMPTY: ?u64 = null;
+    const LOAD_FACTOR = 0.75;
+
+    // Golden ratio constant for optimal hash distribution
+    // This is 2^64 * (golden_ratio - 1) = 2^64 / golden_ratio
+    const GOLDEN_RATIO_HASH: u64 = 0x9e3779b97f4a7c15;
+
+    fn init(allocator: std.mem.Allocator) FastPairSet {
+        return FastPairSet{
+            .buckets = &[_]?u64{},
+            .capacity = 0,
+            .count = 0,
+            .allocator = allocator,
+        };
+    }
+
+    fn deinit(self: *FastPairSet) void {
+        if (self.capacity > 0) {
+            self.allocator.free(self.buckets);
+        }
+    }
+
+    fn clearRetainingCapacity(self: *FastPairSet) void {
+        @memset(self.buckets, EMPTY);
+        self.count = 0;
+    }
+
+    fn ensureTotalCapacity(self: *FastPairSet, new_capacity: usize) !void {
+        if (new_capacity == 0) return;
+        const new_capacity_f32: f32 = @floatFromInt(new_capacity);
+        const size_needed = @max(1, @as(u32, @intFromFloat(new_capacity_f32 / LOAD_FACTOR)));
+        const target_capacity = @max(16, std.math.ceilPowerOfTwo(u32, size_needed) catch unreachable);
+
+        if (target_capacity <= self.capacity) return;
+
+        const old_buckets = self.buckets;
+        const old_capacity = self.capacity;
+
+        self.buckets = try self.allocator.alloc(?u64, target_capacity);
+        self.capacity = target_capacity;
+        @memset(self.buckets, EMPTY);
+        self.count = 0;
+
+        // Rehash existing elements
+        for (old_buckets[0..old_capacity]) |maybe_key| {
+            if (maybe_key) |key| {
+                _ = self.insertAssumeCapacity(key);
+            }
+        }
+
+        if (old_capacity > 0) {
+            self.allocator.free(old_buckets);
+        }
+    }
+
+    inline fn hash(key: u64) u32 {
+        // SplitMix64-inspired hash function for better distribution.
+        var x = key;
+        x ^= x >> 32; // Mix upper/lower 32 bits
+        x *%= GOLDEN_RATIO_HASH; // Multiply by golden ratio for optimal spread
+        x ^= x >> 32; // Final mixing for avalanche effect
+        return @truncate(x); // Return lower 32 bits
+    }
+
+    fn insertAssumeCapacity(self: *FastPairSet, key: u64) bool {
+        const mask = self.capacity - 1;
+        var idx = FastPairSet.hash(key) & mask;
+
+        while (true) {
+            if (self.buckets[idx] == EMPTY) {
+                self.buckets[idx] = key;
+                self.count += 1;
+                return false; // Not found existing
+            } else if (self.buckets[idx] == key) {
+                return true; // Found existing
+            }
+            idx = (idx + 1) & mask; // Linear probing
+        }
+    }
+};
 
 const Self = @This();
 
@@ -69,11 +150,14 @@ cell_size: f32,
 cells: CellHashMap,
 allocator: std.mem.Allocator,
 pairs: std.ArrayList(BodyPair),
-seen_pairs: PairHashMap,
+processed_pairs: FastPairSet,
 non_empty_cells: std.ArrayList(*std.ArrayList(BodyId)),
 // Incremental update tracking
 body_positions: std.ArrayList(m.Vec2),
 body_cells: std.ArrayList(std.ArrayList(GridCoord)),
+// Memory pool for reduced allocations
+cell_pool: std.ArrayList(std.ArrayList(BodyId)),
+coord_pool: std.ArrayList(std.ArrayList(GridCoord)),
 
 pub fn init(allocator: std.mem.Allocator, cell_size: f32) Self {
     return Self{
@@ -81,10 +165,12 @@ pub fn init(allocator: std.mem.Allocator, cell_size: f32) Self {
         .cells = CellHashMap.init(allocator),
         .allocator = allocator,
         .pairs = std.ArrayList(BodyPair){},
-        .seen_pairs = PairHashMap.init(allocator),
+        .processed_pairs = FastPairSet.init(allocator),
         .non_empty_cells = std.ArrayList(*std.ArrayList(BodyId)){},
         .body_positions = std.ArrayList(m.Vec2){},
         .body_cells = std.ArrayList(std.ArrayList(GridCoord)){},
+        .cell_pool = std.ArrayList(std.ArrayList(BodyId)){},
+        .coord_pool = std.ArrayList(std.ArrayList(GridCoord)){},
     };
 }
 
@@ -95,13 +181,21 @@ pub fn deinit(self: *Self) void {
     }
     self.cells.deinit();
     self.pairs.deinit(self.allocator);
-    self.seen_pairs.deinit();
+    self.processed_pairs.deinit();
     self.non_empty_cells.deinit(self.allocator);
     self.body_positions.deinit(self.allocator);
     for (self.body_cells.items) |*cell_list| {
         cell_list.deinit(self.allocator);
     }
     self.body_cells.deinit(self.allocator);
+    for (self.cell_pool.items) |*cell_list| {
+        cell_list.deinit(self.allocator);
+    }
+    self.cell_pool.deinit(self.allocator);
+    for (self.coord_pool.items) |*coord_list| {
+        coord_list.deinit(self.allocator);
+    }
+    self.coord_pool.deinit(self.allocator);
 }
 
 pub fn clear(self: *Self) void {
@@ -229,7 +323,7 @@ pub fn updateBody(self: *Self, body_id: BodyId, aabb: Aabb) !void {
 /// Returns a list of potentially colliding body pairs.
 pub fn getPairs(self: *Self) ![]const BodyPair {
     self.pairs.clearRetainingCapacity();
-    self.seen_pairs.clearRetainingCapacity();
+    self.processed_pairs.clearRetainingCapacity();
     self.non_empty_cells.clearRetainingCapacity();
 
     // Single pass: collect non-empty cells and estimate pairs
@@ -245,20 +339,17 @@ pub fn getPairs(self: *Self) ![]const BodyPair {
 
     // Pre-allocate containers with estimated capacity
     try self.pairs.ensureTotalCapacity(self.allocator, estimated_pairs);
-    try self.seen_pairs.ensureTotalCapacity(@intCast(estimated_pairs));
+    try self.processed_pairs.ensureTotalCapacity(@intCast(estimated_pairs));
 
     // Process pairs from collected cells
     for (self.non_empty_cells.items) |body_list| {
-        // Check all pairs within this cell
-        for (body_list.items, 0..) |body_a, i| {
-            for (body_list.items[i + 1 ..]) |body_b| {
-                const pair = BodyPair.new(body_a, body_b);
-                // Use assumeCapacity since we pre-allocated
-                const pair_key_entry = self.seen_pairs.getOrPutAssumeCapacity(pair.key);
-                if (!pair_key_entry.found_existing) {
-                    self.pairs.appendAssumeCapacity(pair);
-                }
-            }
+        const body_count = body_list.items.len;
+        if (body_count <= 8) {
+            // Small cell: use optimized unrolled loops
+            self.processSmallCell(body_list.items);
+        } else {
+            // Large cell: use vectorized approach
+            try self.processLargeCell(body_list.items);
         }
     }
 
@@ -278,6 +369,64 @@ fn getOverlappingCells(self: Self, aabb: Aabb) struct { min: GridCoord, max: Gri
     const min_coord = self.worldToGrid(aabb.min);
     const max_coord = self.worldToGrid(aabb.max);
     return .{ .min = min_coord, .max = max_coord };
+}
+
+/// Optimized processing for small cells (<= 8 bodies) using unrolled loops.
+inline fn processSmallCell(self: *Self, bodies: []const BodyId) void {
+    const len = bodies.len;
+    comptime var i: usize = 0;
+    inline while (i < 8) : (i += 1) {
+        if (i >= len) break;
+        comptime var j: usize = i + 1;
+        inline while (j < 8) : (j += 1) {
+            if (j >= len) break;
+            const pair = BodyPair.new(bodies[i], bodies[j]);
+            const found_existing = self.processed_pairs.insertAssumeCapacity(pair.key);
+            if (!found_existing) {
+                self.pairs.appendAssumeCapacity(pair);
+            }
+        }
+    }
+}
+
+/// Optimized processing for large cells using batched operations.
+fn processLargeCell(self: *Self, bodies: []const BodyId) !void {
+    // Process in chunks of 4 for better cache performance
+    const chunk_size = 4;
+    var i: usize = 0;
+
+    while (i < bodies.len) {
+        const end_i = @min(i + chunk_size, bodies.len);
+        var j = i + 1;
+
+        while (j < bodies.len) {
+            const end_j = @min(j + chunk_size, bodies.len);
+
+            // Process chunk i against chunk j
+            for (bodies[i..end_i]) |body_a| {
+                for (bodies[j..end_j]) |body_b| {
+                    const pair = BodyPair.new(body_a, body_b);
+                    const found_existing = self.processed_pairs.insertAssumeCapacity(pair.key);
+                    if (!found_existing) {
+                        self.pairs.appendAssumeCapacity(pair);
+                    }
+                }
+            }
+            j = end_j;
+        }
+
+        // Process within chunk i
+        for (bodies[i..end_i], 0..) |body_a, idx_a| {
+            for (bodies[i + idx_a + 1 .. end_i]) |body_b| {
+                const pair = BodyPair.new(body_a, body_b);
+                const found_existing = self.processed_pairs.insertAssumeCapacity(pair.key);
+                if (!found_existing) {
+                    self.pairs.appendAssumeCapacity(pair);
+                }
+            }
+        }
+        i = end_i;
+    }
 }
 
 //------------------------------------------------------------------------------
