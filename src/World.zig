@@ -128,13 +128,14 @@ fn detectCollisionsBroadPhase(self: *World) ![]const SpatialHashGrid.BodyPair {
     const zone = tracy.initZone(@src(), .{});
     defer zone.deinit();
 
-    const zone_spatial_grid = tracy.initZone(@src(), .{ .name = "detectCollisionsBroadPhase:setup" });
-    // Clear and rebuild the spatial grid
-    self.spatial_grid.clear();
-    // Insert all bodies into the spatial grid
+    const zone_spatial_grid = tracy.initZone(@src(), .{ .name = "detectCollisionsBroadPhase:update" });
+    // Initialize tracking for current body count.
+    try self.spatial_grid.initIncrementalTracking(self.bodies.items.len);
+
+    // Incrementally update bodies that have moved.
     for (self.bodies.items, 0..) |*body, i| {
         const aabb = body.getAabb();
-        try self.spatial_grid.insert(BodyId.new(i), aabb);
+        try self.spatial_grid.updateBody(BodyId.new(i), aabb);
     }
     zone_spatial_grid.deinit();
 

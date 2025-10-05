@@ -71,6 +71,9 @@ allocator: std.mem.Allocator,
 pairs: std.ArrayList(BodyPair),
 seen_pairs: PairHashMap,
 non_empty_cells: std.ArrayList(*std.ArrayList(BodyId)),
+// Incremental update tracking
+body_positions: std.ArrayList(m.Vec2),
+body_cells: std.ArrayList(std.ArrayList(GridCoord)),
 
 pub fn init(allocator: std.mem.Allocator, cell_size: f32) Self {
     return Self{
@@ -80,6 +83,8 @@ pub fn init(allocator: std.mem.Allocator, cell_size: f32) Self {
         .pairs = std.ArrayList(BodyPair){},
         .seen_pairs = PairHashMap.init(allocator),
         .non_empty_cells = std.ArrayList(*std.ArrayList(BodyId)){},
+        .body_positions = std.ArrayList(m.Vec2){},
+        .body_cells = std.ArrayList(std.ArrayList(GridCoord)){},
     };
 }
 
@@ -92,6 +97,11 @@ pub fn deinit(self: *Self) void {
     self.pairs.deinit(self.allocator);
     self.seen_pairs.deinit();
     self.non_empty_cells.deinit(self.allocator);
+    self.body_positions.deinit(self.allocator);
+    for (self.body_cells.items) |*cell_list| {
+        cell_list.deinit(self.allocator);
+    }
+    self.body_cells.deinit(self.allocator);
 }
 
 pub fn clear(self: *Self) void {
@@ -115,6 +125,103 @@ pub fn insert(self: *Self, body_id: BodyId, aabb: Aabb) !void {
                 result.value_ptr.* = std.ArrayList(BodyId){};
             }
             try result.value_ptr.append(self.allocator, body_id);
+        }
+    }
+}
+
+/// Initialize incremental tracking for a body count.
+pub fn initIncrementalTracking(self: *Self, body_count: usize) !void {
+    // Only grow, never shrink to avoid invalidating existing data
+    if (body_count <= self.body_positions.items.len) return;
+
+    const old_len = self.body_positions.items.len;
+    try self.body_positions.resize(self.allocator, body_count);
+    try self.body_cells.resize(self.allocator, body_count);
+
+    // Initialize only new cell lists
+    for (self.body_cells.items[old_len..]) |*cell_list| {
+        cell_list.* = std.ArrayList(GridCoord){};
+    }
+
+    // Initialize only new positions to invalid values to force initial update
+    for (self.body_positions.items[old_len..]) |*pos| {
+        pos.* = m.Vec2.new(std.math.inf(f32), std.math.inf(f32));
+    }
+}
+
+/// Remove a body from its current cells.
+fn removeBodyFromCells(self: *Self, body_id: BodyId) void {
+    if (body_id.index >= self.body_cells.items.len) return;
+
+    const cell_coords = &self.body_cells.items[body_id.index];
+    for (cell_coords.items) |coord| {
+        if (self.cells.getPtr(coord)) |cell_bodies| {
+            // Remove body from this cell
+            var i: usize = 0;
+            while (i < cell_bodies.items.len) {
+                if (cell_bodies.items[i].index == body_id.index) {
+                    _ = cell_bodies.swapRemove(i);
+                    break;
+                }
+                i += 1;
+            }
+        }
+    }
+    cell_coords.clearRetainingCapacity();
+}
+
+/// Insert body into new cells and track them.
+fn insertBodyIntoCells(self: *Self, body_id: BodyId, aabb: Aabb) !void {
+    const cells = self.getOverlappingCells(aabb);
+
+    if (body_id.index >= self.body_cells.items.len) return;
+    const cell_coords = &self.body_cells.items[body_id.index];
+
+    var y = cells.min.y;
+    while (y <= cells.max.y) : (y += 1) {
+        var x = cells.min.x;
+        while (x <= cells.max.x) : (x += 1) {
+            const coord = GridCoord{ .x = x, .y = y };
+
+            // Track this cell for the body
+            try cell_coords.append(self.allocator, coord);
+
+            // Add body to the cell
+            const result = try self.cells.getOrPut(coord);
+            if (!result.found_existing) {
+                result.value_ptr.* = std.ArrayList(BodyId){};
+            }
+            try result.value_ptr.append(self.allocator, body_id);
+        }
+    }
+}
+
+/// Update a body's position.
+pub fn updateBody(self: *Self, body_id: BodyId, aabb: Aabb) !void {
+    if (body_id.index >= self.body_positions.items.len) return;
+
+    const current_center = aabb.getCenter();
+    const last_position = &self.body_positions.items[body_id.index];
+
+    // Check if this is the first time the body appears, due to invalid (infinite) position.
+    const is_first_time = std.math.isInf(last_position.x()) or std.math.isInf(last_position.y());
+
+    if (is_first_time) {
+        // First time: Just insert and update position.
+        try self.insertBodyIntoCells(body_id, aabb);
+        last_position.* = current_center;
+    } else {
+        // Check if body moved enough to warrant an update.
+        const movement = current_center.sub(last_position.*);
+        const movement_threshold = self.cell_size * 0.1; // 10% of cell size
+
+        if (@abs(movement.x()) > movement_threshold or @abs(movement.y()) > movement_threshold) {
+            // Remove from old cells
+            self.removeBodyFromCells(body_id);
+            // Insert into new cells
+            try self.insertBodyIntoCells(body_id, aabb);
+            // Update cached position
+            last_position.* = current_center;
         }
     }
 }
