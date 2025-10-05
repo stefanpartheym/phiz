@@ -9,7 +9,7 @@ pub const BodyPair = struct {
     key: u64,
 
     /// Create a normalized BodyPair (smaller index first) to avoid duplicates.
-    pub fn new(a: BodyId, b: BodyId) @This() {
+    pub inline fn new(a: BodyId, b: BodyId) @This() {
         return if (a.index < b.index)
             @This(){
                 .a = a,
