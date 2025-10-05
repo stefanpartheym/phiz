@@ -294,34 +294,36 @@ fn detectCollisionsNarrowPhase(self: *World, pairs: []const SpatialHashGrid.Body
                 .mtv = collision_mtv,
                 .normal = normal,
             };
-            var event = CollisionEvent{
+            try self.collision_events.append(self.allocator, CollisionEvent{
                 .body_a = body_a,
                 .body_b = body_b,
                 .collision = collision,
                 .disable_physics = false,
-            };
-
-            try self.collision_events.append(self.allocator, event);
-
-            // Fire on_contact callback if present.
-            // TODO: Collect all collisions first and fire all callbacks at the end.
-            // After that, add collisions to appropriate lists.
-            if (self.contact_listener.on_contact) |callback| {
-                callback(self, &event);
-            }
-
-            // Add collision only, if physics were not disabled in on_contact callback.
-            if (!event.disable_physics) {
-                // Append collision to appropriate list based on its type.
-                switch (collision.type) {
-                    .dynamic_static => try self.collisions_ds.append(self.allocator, collision),
-                    .dynamic_dynamic => try self.collisions_dd.append(self.allocator, collision),
-                }
-                // Store the penetration in both bodies.
-                body_a.accumulatePenetration(collision_mtv);
-                body_b.accumulatePenetration(collision_mtv.negate());
-            }
+            });
         }
+    }
+
+    // Invoke `on_contact` callback for each collision event if present.
+    for (self.collision_events.items) |*event| {
+        if (self.contact_listener.on_contact) |callback| {
+            callback(self, event);
+        }
+    }
+
+    // Process all collision events in order.
+    for (self.collision_events.items) |event| {
+        // Skip collision if physics were disabled in `on_contact` callback.
+        if (event.disable_physics) continue;
+
+        const collision = event.collision;
+        // Append collision to appropriate list based on its type.
+        switch (event.collision.type) {
+            .dynamic_static => try self.collisions_ds.append(self.allocator, collision),
+            .dynamic_dynamic => try self.collisions_dd.append(self.allocator, collision),
+        }
+        // Store the penetration in both bodies.
+        event.body_a.accumulatePenetration(collision.mtv);
+        event.body_b.accumulatePenetration(collision.mtv.negate());
     }
 }
 
