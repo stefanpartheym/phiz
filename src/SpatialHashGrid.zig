@@ -14,7 +14,7 @@ pub const BodyPair = struct {
             @This(){
                 .a = a,
                 .b = b,
-                .key = (@as(u64, b.index) << 32) | @as(u64, a.index),
+                .key = (@as(u64, a.index) << 32) | @as(u64, b.index),
             }
         else
             @This(){
