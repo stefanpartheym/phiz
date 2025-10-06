@@ -210,7 +210,7 @@ pub fn renderHud(state: *State) void {
     );
 
     line += 1;
-    const bodies_count = state.world.bodies.items.len - state.world.free_body_indices.items.len;
+    const bodies_count = state.world.bodies.items.len - state.world.free_body_ids.items.len;
     const bodies_text = std.fmt.bufPrintZ(
         &text_buf,
         "Bodies: {d}",

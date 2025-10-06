@@ -44,7 +44,9 @@ body_generations: std.ArrayList(BodyId.GenerationType),
 /// TODO: Maybe merge this into the body_generations list?
 body_active: std.ArrayList(bool),
 /// List of free body indices that can be reused
-free_body_indices: std.ArrayList(BodyId.IndexType),
+free_body_ids: std.ArrayList(BodyId.IndexType),
+/// List of body indices that need to be destroyed at the end of the physics step
+destroy_body_ids: std.ArrayList(BodyId),
 /// Global generation counter
 next_generation: BodyId.GenerationType,
 /// dynamic/static collisions
@@ -66,7 +68,8 @@ pub fn init(allocator: std.mem.Allocator, config: Config) Self {
         .bodies = std.ArrayList(Body){},
         .body_generations = std.ArrayList(BodyId.GenerationType){},
         .body_active = std.ArrayList(bool){},
-        .free_body_indices = std.ArrayList(BodyId.IndexType){},
+        .free_body_ids = std.ArrayList(BodyId.IndexType){},
+        .destroy_body_ids = std.ArrayList(BodyId){},
         .next_generation = 0,
         .collisions_ds = std.ArrayList(Collision){},
         .collisions_dd = std.ArrayList(Collision){},
@@ -81,7 +84,8 @@ pub fn deinit(self: *Self) void {
     self.collisions_ds.deinit(self.allocator);
     self.collisions_dd.deinit(self.allocator);
     self.collision_events.deinit(self.allocator);
-    self.free_body_indices.deinit(self.allocator);
+    self.destroy_body_ids.deinit(self.allocator);
+    self.free_body_ids.deinit(self.allocator);
     self.body_active.deinit(self.allocator);
     self.body_generations.deinit(self.allocator);
     self.bodies.deinit(self.allocator);
@@ -93,7 +97,8 @@ pub fn clear(self: *Self) void {
     self.collisions_ds.clearRetainingCapacity();
     self.collisions_dd.clearRetainingCapacity();
     self.collision_events.clearRetainingCapacity();
-    self.free_body_indices.clearRetainingCapacity();
+    self.destroy_body_ids.clearRetainingCapacity();
+    self.free_body_ids.clearRetainingCapacity();
     self.body_active.clearRetainingCapacity();
     self.body_generations.clearRetainingCapacity();
     self.bodies.clearRetainingCapacity();
@@ -131,6 +136,19 @@ pub fn update(self: *Self, timestep: f32, substeps: usize) !void {
         try self.detectCollisions();
         try self.resolveCollisions();
 
+        // Destroy marked bodies.
+        // This must happend at the end of each substep to make sure the same
+        // collisions won't appear in the next substep, to not waste any
+        // computation on already discarded bodies.
+        // Since every loop over `self.bodies.items` checks if the current body
+        // is active, it is safe to delete bodies after collision resolution.
+        for (self.destroy_body_ids.items) |id| {
+            // Skip potential duplicates in `destroy_body_ids`.
+            if (!self.isBodyActive(id.index)) continue;
+            try self.destroyBody(id);
+        }
+        self.destroy_body_ids.clearRetainingCapacity();
+
         // Account for floating point inaccuracies.
         for (self.bodies.items, 0..) |*body, i| {
             if (!self.isBodyActive(i)) continue;
@@ -163,7 +181,7 @@ pub inline fn isBodyActive(self: *const Self, index: BodyId.IndexType) bool {
 }
 
 pub fn createBody(self: *Self, body: Body) !BodyId {
-    const index: BodyId.IndexType = if (self.free_body_indices.pop()) |free_index| blk: {
+    const index: BodyId.IndexType = if (self.free_body_ids.pop()) |free_index| blk: {
         // Reuse a free index.
         self.bodies.items[free_index] = body;
         self.body_active.items[free_index] = true;
@@ -184,6 +202,8 @@ pub fn getBody(self: *const Self, id: BodyId) BodyAccessError!*Body {
     return &self.bodies.items[id.index];
 }
 
+/// Destry a body immediately.
+/// NOTE: Do not use this in ContactListener callbacks.
 pub fn destroyBody(self: *Self, id: BodyId) !void {
     try self.validateBodyId(id);
     // Mark body as inactive.
@@ -194,7 +214,13 @@ pub fn destroyBody(self: *Self, id: BodyId) !void {
     self.next_generation += 1;
     self.body_generations.items[id.index] = self.next_generation;
     // Add index to free list for reuse.
-    try self.free_body_indices.append(self.allocator, id.index);
+    try self.free_body_ids.append(self.allocator, id.index);
+}
+
+/// Defer the destruction of a body to the end of the current physics substep.
+/// This function can be used in ContactListener callbacks.
+pub fn destroyBodyDeferred(self: *World, id: BodyId) !void {
+    try self.destroy_body_ids.append(self.allocator, id);
 }
 
 fn detectCollisions(self: *Self) !void {
@@ -204,6 +230,7 @@ fn detectCollisions(self: *Self) !void {
     // Clear previous collisions
     self.collisions_ds.clearRetainingCapacity();
     self.collisions_dd.clearRetainingCapacity();
+    self.collision_events.clearRetainingCapacity();
 
     const pairs = try self.detectCollisionsBroadPhase();
     try self.detectCollisionsNarrowPhase(pairs);
@@ -234,9 +261,6 @@ fn detectCollisionsBroadPhase(self: *World) ![]const SpatialHashGrid.BodyPair {
 fn detectCollisionsNarrowPhase(self: *World, pairs: []const SpatialHashGrid.BodyPair) !void {
     const zone = tracy.initZone(@src(), .{});
     defer zone.deinit();
-
-    // Clear collision events from previous frame
-    self.collision_events.clearRetainingCapacity();
 
     for (pairs) |pair| {
         const body_a = &self.bodies.items[pair.a.index];

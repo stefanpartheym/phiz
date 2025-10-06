@@ -281,12 +281,13 @@ fn bodyIsGrounded(body: *phiz.Body) bool {
 fn bodiesOnContact(world: *phiz.World, event: *phiz.CollisionEvent) void {
     const layer_a = event.body_a.collision_filter.layer;
     const layer_b = event.body_b.collision_filter.layer;
-    if ((layer_a == CollisionLayer.PLAYER and layer_b == CollisionLayer.COINS) or
-        (layer_a == CollisionLayer.COINS and layer_b == CollisionLayer.PLAYER))
-    {
+    const a_is_player = layer_a == CollisionLayer.PLAYER and layer_b == CollisionLayer.COINS;
+    const b_is_player = layer_a == CollisionLayer.COINS and layer_b == CollisionLayer.PLAYER;
+    if (a_is_player or b_is_player) {
         coins_collected += 1;
         event.disable_physics = true;
-        world.destroyBody(event.collision.body_b) catch unreachable;
+        const coin_body_id = if (a_is_player) event.collision.body_b else event.collision.body_a;
+        world.destroyBodyDeferred(coin_body_id) catch unreachable;
     }
 }
 
