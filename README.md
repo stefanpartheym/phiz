@@ -27,7 +27,9 @@ The list of features I'm planning to implement:
 - [x] Fully inelastic collision response for dynamic body vs dynamic body collisions
 - [x] Circle vs AABB collision detection (discrete)
 - [x] Circle vs circle collision detection (discrete)
-- [ ] Broad phase collision detection (via spatial partitioning, quadtrees, etc.)
+- [x] Broad phase collision detection (via spatial partitioning, quadtrees, etc.)
+  - [x] Spatial hash grid
+  - [ ] Quadtree
 - [ ] Continuous collision detection for fast moving bodies
 
 ## Examples
@@ -46,6 +48,8 @@ This example demonstrates how multiple dynamic bodies fall onto a circle collide
 It mainly serves as a reliable scenario for performance testing, as it does not allow for player interaction and should
 always produce the same output (i.e. should be deterministic).
 
+In this example, it is obvious, how stacking multiple dynamic bodies on top of each other is unstable and causes jitting.
+
 ### Platformer
 
 ![2D platformer physics example](./media/platformer.gif)
@@ -55,10 +59,11 @@ zig build run-platformer
 ```
 
 This example demonstrates the use of gravity and a simple player controller for side-scrolling platformers.
+
 Damping is used with two different values based on the player being on the ground or in the air.
 This ensures the player will fall naturally due to gravity, but will gradually decelerate while being on the ground.
 
-In this example, you can see, how stacking multiple boxes on top of each other is still very unstable and causes jitting.
+The `ContactListener`'s `on_contact` callback is used to destroy bodies to simulate coins being collected.
 
 ### Top-down
 
@@ -68,6 +73,7 @@ zig build run-topdown
 
 This example demonstrates how to use the engine for top-down games (like RPG's, dungeon crawlers, survivor-likes, etc.),
 that usually don't have gravity involved, since it's sort of a "top-down" view.
+
 For the player a circle shape is used, which provides smooth sliding past corners.
 
 ## Resources
