@@ -37,7 +37,6 @@ const Self = @This();
 allocator: std.mem.Allocator,
 gravity: m.Vec2,
 terminal_velocity: f32,
-dt_accumulator: f32,
 bodies: std.ArrayList(Body),
 /// Generation counter for each body slot
 body_generations: std.ArrayList(BodyId.GenerationType),
@@ -64,7 +63,6 @@ pub fn init(allocator: std.mem.Allocator, config: Config) Self {
         .allocator = allocator,
         .gravity = config.gravity,
         .terminal_velocity = config.terminal_velocity,
-        .dt_accumulator = 0,
         .bodies = std.ArrayList(Body){},
         .body_generations = std.ArrayList(BodyId.GenerationType){},
         .body_active = std.ArrayList(bool){},
@@ -90,7 +88,6 @@ pub fn deinit(self: *Self) void {
 }
 
 pub fn clear(self: *Self) void {
-    self.dt_accumulator = 0;
     self.next_generation = 0;
     self.spatial_grid.clear();
     self.collisions_ds.clearRetainingCapacity();
