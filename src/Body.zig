@@ -19,6 +19,7 @@ pub const Config = struct {
     damping: f32 = 0,
     restitution: f32 = 0,
     collision_filter: CollisionFilter = .init,
+    user_data: ?*anyopaque = null,
 };
 
 const Self = @This();
@@ -39,6 +40,8 @@ restitution: f32,
 penetration: m.Vec2,
 /// Collision filtering data
 collision_filter: CollisionFilter,
+/// User data
+user_data: ?*anyopaque,
 
 pub fn new(body_type: BodyType, config: Config) Self {
     return Self{
@@ -59,6 +62,7 @@ pub fn new(body_type: BodyType, config: Config) Self {
         .restitution = config.restitution,
         .penetration = m.Vec2.zero(),
         .collision_filter = config.collision_filter,
+        .user_data = config.user_data,
     };
 }
 
