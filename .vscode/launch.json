@@ -9,7 +9,8 @@
       "program": "${workspaceFolder}/zig-out/bin/example-platformer",
       "cwd": "${workspaceFolder}",
       "stopOnEntry": false,
-      "args": []
+      "args": [],
+      "initCommands": ["command source ~/.config/lldb/zig-lldbinit"]
     },
     {
       "type": "lldb",
@@ -19,7 +20,8 @@
       "program": "${workspaceFolder}/zig-out/bin/example-topdown",
       "cwd": "${workspaceFolder}",
       "stopOnEntry": false,
-      "args": []
+      "args": [],
+      "initCommands": ["command source ~/.config/lldb/zig-lldbinit"]
     },
     {
       "type": "lldb",
@@ -29,7 +31,8 @@
       "program": "${workspaceFolder}/zig-out/bin/test",
       "cwd": "${workspaceFolder}",
       "stopOnEntry": false,
-      "args": []
+      "args": [],
+      "initCommands": ["command source ~/.config/lldb/zig-lldbinit"]
     }
   ]
 }

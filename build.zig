@@ -154,7 +154,12 @@ const Example = struct {
         exe_mod.addImport("tracy", self.tracy_mod);
         exe_mod.linkLibrary(self.tracy_lib);
 
-        const exe = b.addExecutable(.{ .name = "example-" ++ name, .root_module = exe_mod });
+        const exe = b.addExecutable(.{
+            .name = "example-" ++ name,
+            .root_module = exe_mod,
+            // Use LLVM to be able to debug with LLDB.
+            .use_llvm = true,
+        });
         b.installArtifact(exe);
 
         const run_cmd = b.addRunArtifact(exe);
