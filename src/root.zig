@@ -1,9 +1,9 @@
 pub const m = @import("m");
 pub const Aabb = @import("./Aabb.zig");
-pub const Body = @import("./Body.zig");
+pub const Body = @import("./Body.zig").Body;
 pub const BodyId = @import("./BodyId.zig");
 pub const Circle = @import("./Circle.zig");
 pub const Collision = @import("./Collision.zig");
 pub const CollisionEvent = @import("./CollisionEvent.zig");
 pub const CollisionFilter = @import("./CollisionFilter.zig");
-pub const World = @import("./World.zig");
+pub const World = @import("./World.zig").World;

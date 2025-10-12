@@ -4,6 +4,8 @@ const phiz = @import("phiz");
 const m = phiz.m;
 const common = @import("./common.zig");
 const State = common.State;
+const World = common.World;
+const Body = World.Body;
 
 const DISPLAY_SIZE = m.Vec2_i32.new(800, 600);
 const TARGET_FPS = 60;
@@ -42,22 +44,22 @@ fn setup(state: *State) !void {
     const display_size_f32: m.Vec2 = DISPLAY_SIZE.cast(f32);
     const collider_size = 20;
     // Top
-    _ = try state.world.createBody(phiz.Body.new(.static, .{
+    _ = try state.world.createBody(Body.new(.static, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(display_size_f32.x(), collider_size) } },
     }));
     // Bottom
-    _ = try state.world.createBody(phiz.Body.new(.static, .{
+    _ = try state.world.createBody(Body.new(.static, .{
         .position = m.Vec2.new(0, display_size_f32.y() - collider_size),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(display_size_f32.x(), collider_size) } },
     }));
     // Left
-    _ = try state.world.createBody(phiz.Body.new(.static, .{
+    _ = try state.world.createBody(Body.new(.static, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size_f32.y()) } },
     }));
     // Right
-    _ = try state.world.createBody(phiz.Body.new(.static, .{
+    _ = try state.world.createBody(Body.new(.static, .{
         .position = m.Vec2.new(display_size_f32.x() - collider_size, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size_f32.y()) } },
     }));
@@ -71,15 +73,15 @@ fn setup(state: *State) !void {
     const pillar_top_right = m.Vec2.new(display_half_size.x() + pillar_offset - pillar_half_size, display_half_size.y() - pillar_offset - pillar_half_size);
     const pillar_bottom_left = m.Vec2.new(display_half_size.x() - pillar_offset - pillar_half_size, display_half_size.y() + pillar_offset - pillar_half_size);
     const pillar_bottom_right = m.Vec2.new(display_half_size.x() + pillar_offset - pillar_half_size, display_half_size.y() + pillar_offset - pillar_half_size);
-    const pillar_shape = phiz.Body.Shape{ .rectangle = .{ .size = m.Vec2.new(pillar_size, pillar_size) } };
+    const pillar_shape = Body.Shape{ .rectangle = .{ .size = m.Vec2.new(pillar_size, pillar_size) } };
 
-    _ = try state.world.createBody(phiz.Body.new(.static, .{ .position = pillar_top_left, .shape = pillar_shape }));
-    _ = try state.world.createBody(phiz.Body.new(.static, .{ .position = pillar_top_right, .shape = pillar_shape }));
-    _ = try state.world.createBody(phiz.Body.new(.static, .{ .position = pillar_bottom_left, .shape = pillar_shape }));
-    _ = try state.world.createBody(phiz.Body.new(.static, .{ .position = pillar_bottom_right, .shape = pillar_shape }));
+    _ = try state.world.createBody(Body.new(.static, .{ .position = pillar_top_left, .shape = pillar_shape }));
+    _ = try state.world.createBody(Body.new(.static, .{ .position = pillar_top_right, .shape = pillar_shape }));
+    _ = try state.world.createBody(Body.new(.static, .{ .position = pillar_bottom_left, .shape = pillar_shape }));
+    _ = try state.world.createBody(Body.new(.static, .{ .position = pillar_bottom_right, .shape = pillar_shape }));
 
     // Add player.
-    state.player = try state.world.createBody(phiz.Body.new(.dynamic, .{
+    state.player = try state.world.createBody(Body.new(.dynamic, .{
         .position = display_half_size,
         .shape = .{ .circle = .{ .radius = 25 } },
         .restitution = 0.8,
@@ -111,7 +113,7 @@ fn input(state: *State) !void {
 
     if (rl.isMouseButtonPressed(.left) or rl.isMouseButtonPressed(.right)) {
         const mouse_pos = rl.getMousePosition();
-        _ = try state.world.createBody(phiz.Body.new(if (rl.isMouseButtonPressed(.left)) .dynamic else .static, .{
+        _ = try state.world.createBody(Body.new(if (rl.isMouseButtonPressed(.left)) .dynamic else .static, .{
             .position = m.Vec2.new(mouse_pos.x, mouse_pos.y),
             .shape = if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift))
                 .{ .circle = .{ .radius = 12.5 } }

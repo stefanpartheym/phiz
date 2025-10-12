@@ -5,6 +5,8 @@ const rl = @import("raylib");
 const phiz = @import("phiz");
 const m = phiz.m;
 
+pub const World = phiz.world.World(void);
+
 pub const State = struct {
     const Debugger = struct {
         const Config = struct {
@@ -66,7 +68,7 @@ pub const State = struct {
 
     const Config = struct {
         debugger_config: Debugger.Config = .{},
-        physics_config: phiz.World.Config = .{},
+        physics_config: World.Config = .{},
     };
 
     const Self = @This();
@@ -76,7 +78,7 @@ pub const State = struct {
     accumulator: f32,
     input: Input,
     debugger: Debugger,
-    world: phiz.World,
+    world: World,
     player: phiz.BodyId,
 
     pub fn init(allocator: std.mem.Allocator, config: Config) Self {
@@ -86,7 +88,7 @@ pub const State = struct {
             .accumulator = 0,
             .input = Input.init,
             .debugger = Debugger.new(config.debugger_config),
-            .world = phiz.World.init(allocator, config.physics_config),
+            .world = World.init(allocator, config.physics_config),
             .player = undefined,
         };
     }
@@ -96,7 +98,7 @@ pub const State = struct {
     }
 };
 
-pub fn renderBody(body: phiz.Body) void {
+pub fn renderBody(body: World.Body) void {
     const color = if (body.isDynamic()) rl.Color.blue else rl.Color.gray;
 
     switch (body.shape) {
@@ -117,7 +119,7 @@ pub fn renderBody(body: phiz.Body) void {
     }
 }
 
-pub fn renderBodyDebug(body: phiz.Body, index: usize) void {
+pub fn renderBodyDebug(body: World.Body, index: usize) void {
     // Draw shape bounds.
     switch (body.shape) {
         .rectangle => |rect| {

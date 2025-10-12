@@ -7,6 +7,8 @@ const phiz = @import("phiz");
 const m = phiz.m;
 const common = @import("./common.zig");
 const State = common.State;
+const World = common.World;
+const Body = World.Body;
 
 const DISPLAY_SIZE = m.Vec2_i32.new(800, 600);
 const TARGET_FPS = 60;
@@ -49,26 +51,26 @@ fn setup(state: *State) !void {
     const collider_size = 20;
     const collider_left = 250;
     const collider_right = 550;
-    const circle_shape = phiz.Body.Shape{ .circle = .{ .radius = 40 } };
-    const wall_shape = phiz.Body.Shape{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size.y()) } };
-    const dynamic_shape_rect = phiz.Body.Shape{ .rectangle = .{ .size = m.Vec2.new(collider_size, collider_size) } };
-    const dynamic_shape_circ = phiz.Body.Shape{ .circle = .{ .radius = collider_size / 2 } };
+    const circle_shape = Body.Shape{ .circle = .{ .radius = 40 } };
+    const wall_shape = Body.Shape{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size.y()) } };
+    const dynamic_shape_rect = Body.Shape{ .rectangle = .{ .size = m.Vec2.new(collider_size, collider_size) } };
+    const dynamic_shape_circ = Body.Shape{ .circle = .{ .radius = collider_size / 2 } };
 
-    _ = try state.world.createBody(phiz.Body.new(
+    _ = try state.world.createBody(Body.new(
         .static,
         .{
             .position = m.Vec2.new(0, display_size.y() - collider_size),
             .shape = .{ .rectangle = .{ .size = m.Vec2.new(display_size.x(), collider_size) } },
         },
     ));
-    _ = try state.world.createBody(phiz.Body.new(
+    _ = try state.world.createBody(Body.new(
         .static,
         .{
             .position = m.Vec2.new(0, 0),
             .shape = wall_shape,
         },
     ));
-    _ = try state.world.createBody(phiz.Body.new(
+    _ = try state.world.createBody(Body.new(
         .static,
         .{
             .position = m.Vec2.new(display_size.x() - collider_size, 0),
@@ -76,8 +78,8 @@ fn setup(state: *State) !void {
         },
     ));
 
-    _ = try state.world.createBody(phiz.Body.new(.static, .{ .position = m.Vec2.new(collider_left, 300), .shape = circle_shape }));
-    _ = try state.world.createBody(phiz.Body.new(.static, .{ .position = m.Vec2.new(collider_right, 300), .shape = circle_shape }));
+    _ = try state.world.createBody(Body.new(.static, .{ .position = m.Vec2.new(collider_left, 300), .shape = circle_shape }));
+    _ = try state.world.createBody(Body.new(.static, .{ .position = m.Vec2.new(collider_right, 300), .shape = circle_shape }));
 
     const bodies_per_group = 50;
     const offset = -2000;
@@ -87,7 +89,7 @@ fn setup(state: *State) !void {
     try spawnDynamicBodies(state, bodies_per_group, dynamic_shape_circ, m.Vec2.new(collider_right, offset));
 }
 
-fn spawnDynamicBodies(state: *State, count: usize, shape: phiz.Body.Shape, offset: m.Vec2) !void {
+fn spawnDynamicBodies(state: *State, count: usize, shape: Body.Shape, offset: m.Vec2) !void {
     const size = switch (shape) {
         .circle => |circ| circ.radius / 2,
         .rectangle => |rect| rect.size.x(),
@@ -96,7 +98,7 @@ fn spawnDynamicBodies(state: *State, count: usize, shape: phiz.Body.Shape, offse
     for (0..count) |i| {
         const i_f32: f32 = @floatFromInt(i);
         const sign: f32 = if (i % 2 == 0) -1 else 1;
-        _ = try state.world.createBody(phiz.Body.new(.dynamic, .{
+        _ = try state.world.createBody(Body.new(.dynamic, .{
             .position = m.Vec2.new(offset.x() - shape_offset + sign * size, offset.y() - i_f32 * size * 2),
             .shape = shape,
             .restitution = 0.8,
@@ -134,7 +136,7 @@ fn input(state: *State) !void {
 
     if (rl.isMouseButtonPressed(.left) or rl.isMouseButtonPressed(.right)) {
         const mouse_pos = rl.getMousePosition();
-        _ = try state.world.createBody(phiz.Body.new(if (rl.isMouseButtonPressed(.left)) .dynamic else .static, .{
+        _ = try state.world.createBody(Body.new(if (rl.isMouseButtonPressed(.left)) .dynamic else .static, .{
             .position = m.Vec2.new(mouse_pos.x, mouse_pos.y),
             .shape = if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift))
                 .{ .circle = .{ .radius = 12.5 } }

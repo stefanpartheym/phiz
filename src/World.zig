@@ -1,445 +1,466 @@
 const std = @import("std");
 const m = @import("m");
-const Body = @import("./Body.zig");
+const BodyGeneric = @import("./Body.zig").Body;
 const BodyId = @import("./BodyId.zig");
 const Circle = @import("./Circle.zig");
 const Collision = @import("./Collision.zig");
 const CollisionEvent = @import("./CollisionEvent.zig");
 const CollisionFilter = @import("./CollisionFilter.zig");
-const ContactListener = @import("./ContactListener.zig");
 const SpatialHashGrid = @import("./SpatialHashGrid.zig");
 const tracy = @import("tracy");
 
-/// Default gravity is more or less earth's gravity:
-///   g = 9.81 m/s²
-/// Multiplying by 100 to make it feel realistic.
-pub const DEFAULT_GRAVITY = m.Vec2.new(0, 9.81 * 100);
-/// Default terminal velocity.
-pub const DEFAULT_TERMINAL_VELOCITY: f32 = 1000;
+pub fn World(BodyUserData: type) type {
+    return struct {
+        /// Default gravity is more or less earth's gravity:
+        ///   g = 9.81 m/s²
+        /// Multiplying by 100 to make it feel realistic.
+        pub const DEFAULT_GRAVITY = m.Vec2.new(0, 9.81 * 100);
+        /// Default terminal velocity.
+        pub const DEFAULT_TERMINAL_VELOCITY: f32 = 1000;
 
-pub const Config = struct {
-    gravity: m.Vec2 = DEFAULT_GRAVITY,
-    terminal_velocity: f32 = DEFAULT_TERMINAL_VELOCITY,
-    /// Cell size for spatial hash grid.
-    /// Should be roughly the size of the average game object.
-    spatial_grid_cell_size: f32 = 64,
-    /// Contact listener for collision callbacks.
-    contact_listener: ContactListener = .init,
-};
-
-pub const BodyAccessError = error{
-    InvalidIndex,
-    StaleGeneration,
-};
-
-const Self = @This();
-
-allocator: std.mem.Allocator,
-gravity: m.Vec2,
-terminal_velocity: f32,
-bodies: std.ArrayList(Body),
-/// Generation counter for each body slot
-body_generations: std.ArrayList(BodyId.GenerationType),
-/// Active flag for each body slot
-/// TODO: Maybe merge this into the body_generations list?
-body_active: std.ArrayList(bool),
-/// List of free body indices that can be reused
-free_body_ids: std.ArrayList(BodyId.IndexType),
-/// List of body indices that need to be destroyed at the end of the physics step
-destroy_body_ids: std.ArrayList(BodyId),
-/// Global generation counter
-next_generation: BodyId.GenerationType,
-/// dynamic/static collisions
-collisions_ds: std.ArrayList(Collision),
-/// dynamic/dynamic collisions
-collisions_dd: std.ArrayList(Collision),
-/// Spatial hash grid for broad phase collision detection
-spatial_grid: SpatialHashGrid,
-/// Contact listener for custom collision callbacks
-contact_listener: ContactListener,
-/// List of current collision events being processed
-collision_events: std.ArrayList(CollisionEvent),
-
-pub fn init(allocator: std.mem.Allocator, config: Config) Self {
-    return Self{
-        .allocator = allocator,
-        .gravity = config.gravity,
-        .terminal_velocity = config.terminal_velocity,
-        .bodies = std.ArrayList(Body){},
-        .body_generations = std.ArrayList(BodyId.GenerationType){},
-        .body_active = std.ArrayList(bool){},
-        .free_body_ids = std.ArrayList(BodyId.IndexType){},
-        .destroy_body_ids = std.ArrayList(BodyId){},
-        .next_generation = 0,
-        .collisions_ds = std.ArrayList(Collision){},
-        .collisions_dd = std.ArrayList(Collision){},
-        .spatial_grid = SpatialHashGrid.init(allocator, config.spatial_grid_cell_size),
-        .contact_listener = config.contact_listener,
-        .collision_events = std.ArrayList(CollisionEvent){},
-    };
-}
-
-pub fn deinit(self: *Self) void {
-    self.spatial_grid.deinit();
-    self.collisions_ds.deinit(self.allocator);
-    self.collisions_dd.deinit(self.allocator);
-    self.collision_events.deinit(self.allocator);
-    self.destroy_body_ids.deinit(self.allocator);
-    self.free_body_ids.deinit(self.allocator);
-    self.body_active.deinit(self.allocator);
-    self.body_generations.deinit(self.allocator);
-    self.bodies.deinit(self.allocator);
-}
-
-pub fn clear(self: *Self) void {
-    self.next_generation = 0;
-    self.spatial_grid.clear();
-    self.collisions_ds.clearRetainingCapacity();
-    self.collisions_dd.clearRetainingCapacity();
-    self.collision_events.clearRetainingCapacity();
-    self.destroy_body_ids.clearRetainingCapacity();
-    self.free_body_ids.clearRetainingCapacity();
-    self.body_active.clearRetainingCapacity();
-    self.body_generations.clearRetainingCapacity();
-    self.bodies.clearRetainingCapacity();
-}
-
-pub fn update(self: *Self, timestep: f32, substeps: usize) !void {
-    const zone = tracy.initZone(@src(), .{});
-    defer zone.deinit();
-
-    const substep = timestep / @as(f32, @floatFromInt(substeps));
-
-    const zone_apply_forces = tracy.initZone(@src(), .{ .name = "update:apply_forces" });
-    // Apply forces.
-    for (self.bodies.items, 0..) |*body, i| {
-        if (!self.isBodyActive(i)) continue;
-
-        // Reset penetration from previous physics step.
-        body.penetration = m.Vec2.zero();
-        // Apply gravity and accelerate.
-        body.applyForce(self.gravity.scale(body.mass));
-        body.accelerate(timestep);
-        body.applyDamping(timestep);
-    }
-    zone_apply_forces.deinit();
-
-    // Integration and collision detection.
-    for (0..substeps) |_| {
-        // Integrate bodies.
-        for (self.bodies.items, 0..) |*body, i| {
-            if (!self.isBodyActive(i)) continue;
-            body.integrate(substep);
-        }
-
-        // Detect and resolve collisions.
-        try self.detectCollisions();
-        try self.resolveCollisions();
-
-        // Destroy marked bodies.
-        // This must happend at the end of each substep to make sure the same
-        // collisions won't appear in the next substep, to not waste any
-        // computation on already discarded bodies.
-        // Since every loop over `self.bodies.items` checks if the current body
-        // is active, it is safe to delete bodies after collision resolution.
-        for (self.destroy_body_ids.items) |id| {
-            // Skip potential duplicates in `destroy_body_ids`.
-            if (!self.isBodyActive(id.index)) continue;
-            try self.destroyBody(id);
-        }
-        self.destroy_body_ids.clearRetainingCapacity();
-
-        // Account for floating point inaccuracies.
-        for (self.bodies.items, 0..) |*body, i| {
-            if (!self.isBodyActive(i)) continue;
-            if (body.velocity.length() < 0.1) {
-                body.velocity = m.Vec2.zero();
-            }
-        }
-    }
-
-    const zone_reset = tracy.initZone(@src(), .{ .name = "update:reset" });
-    // Reset accelerations and clamp velocities.
-    for (self.bodies.items, 0..) |*body, i| {
-        if (!self.isBodyActive(i)) continue;
-        body.acceleration = m.Vec2.zero();
-        if (body.velocity.length() > self.terminal_velocity) {
-            body.velocity = body.velocity.norm().scale(self.terminal_velocity);
-        }
-    }
-    zone_reset.deinit();
-}
-
-pub inline fn validateBodyId(self: *const Self, id: BodyId) BodyAccessError!void {
-    if (id.index >= self.bodies.items.len) return BodyAccessError.InvalidIndex;
-    if (self.body_generations.items[id.index] != id.generation) return BodyAccessError.StaleGeneration;
-}
-
-pub inline fn isBodyActive(self: *const Self, index: BodyId.IndexType) bool {
-    if (index >= self.body_active.items.len) return false;
-    return self.body_active.items[index];
-}
-
-pub fn createBody(self: *Self, body: Body) !BodyId {
-    const index: BodyId.IndexType = if (self.free_body_ids.pop()) |free_index| blk: {
-        // Reuse a free index.
-        self.bodies.items[free_index] = body;
-        self.body_active.items[free_index] = true;
-        break :blk free_index;
-    } else blk: {
-        // Add new body to the end.
-        try self.bodies.append(self.allocator, body);
-        try self.body_generations.append(self.allocator, 0);
-        try self.body_active.append(self.allocator, true);
-        break :blk self.bodies.items.len - 1;
-    };
-
-    return BodyId.new(index, self.body_generations.items[index]);
-}
-
-pub fn getBody(self: *const Self, id: BodyId) BodyAccessError!*Body {
-    try self.validateBodyId(id);
-    return &self.bodies.items[id.index];
-}
-
-/// Destry a body immediately.
-/// NOTE: Do not use this in ContactListener callbacks.
-pub fn destroyBody(self: *Self, id: BodyId) !void {
-    try self.validateBodyId(id);
-    // Mark body as inactive.
-    self.body_active.items[id.index] = false;
-    // Remove from spatial grid to prevent phantom collisions.
-    self.spatial_grid.removeBody(id);
-    // Increment global generation counter and assign to this slot.
-    self.next_generation += 1;
-    self.body_generations.items[id.index] = self.next_generation;
-    // Add index to free list for reuse.
-    try self.free_body_ids.append(self.allocator, id.index);
-}
-
-/// Defer the destruction of a body to the end of the current physics substep.
-/// This function can be used in ContactListener callbacks.
-pub fn destroyBodyDeferred(self: *World, id: BodyId) !void {
-    try self.destroy_body_ids.append(self.allocator, id);
-}
-
-fn detectCollisions(self: *Self) !void {
-    const zone = tracy.initZone(@src(), .{});
-    defer zone.deinit();
-
-    // Clear previous collisions
-    self.collisions_ds.clearRetainingCapacity();
-    self.collisions_dd.clearRetainingCapacity();
-    self.collision_events.clearRetainingCapacity();
-
-    const pairs = try self.detectCollisionsBroadPhase();
-    try self.detectCollisionsNarrowPhase(pairs);
-}
-
-fn detectCollisionsBroadPhase(self: *World) ![]const SpatialHashGrid.BodyPair {
-    const zone = tracy.initZone(@src(), .{});
-    defer zone.deinit();
-
-    const zone_spatial_grid = tracy.initZone(@src(), .{ .name = "detectCollisionsBroadPhase:update" });
-    // Initialize tracking for current body count.
-    try self.spatial_grid.initIncrementalTracking(self.bodies.items.len);
-
-    // Incrementally update bodies that have moved.
-    for (self.bodies.items, 0..) |*body, i| {
-        if (!self.isBodyActive(i)) continue;
-        const aabb = body.getAabb();
-        try self.spatial_grid.updateBody(BodyId.new(i, self.body_generations.items[i]), aabb);
-    }
-    zone_spatial_grid.deinit();
-
-    // Get potential collision pairs from the spatial grid
-    const pairs = try self.spatial_grid.getPairs();
-
-    return pairs;
-}
-
-fn detectCollisionsNarrowPhase(self: *World, pairs: []const SpatialHashGrid.BodyPair) !void {
-    const zone = tracy.initZone(@src(), .{});
-    defer zone.deinit();
-
-    for (pairs) |pair| {
-        const body_a = &self.bodies.items[pair.a.index];
-        const body_b = &self.bodies.items[pair.b.index];
-
-        // Skip static vs static pairs.
-        // TODO: Move this check to broad phase.
-        if (body_a.isStatic() and body_b.isStatic()) continue;
-
-        // Check if bodies can collide.
-        if (!CollisionFilter.canCollide(body_a.collision_filter, body_b.collision_filter)) continue;
-
-        // Detect collision based on shape types.
-        const mtv = switch (body_a.shape) {
-            .rectangle => switch (body_b.shape) {
-                .rectangle => blk: {
-                    const aabb_a = body_a.getAabb();
-                    const aabb_b = body_b.getAabb();
-                    break :blk aabb_a.getMtv(aabb_b);
-                },
-                .circle => |circ_b| blk: {
-                    const circle_b = Circle.new(body_b.getCenter(), circ_b.radius);
-                    const aabb_a = body_a.getAabb();
-                    // We want the MTV to move body_a away from body_b, so we negate circle_b's MTV.
-                    if (circle_b.getMtvWithAabb(aabb_a)) |mtv_result| {
-                        break :blk mtv_result.negate();
-                    }
-                    break :blk null;
-                },
-            },
-            .circle => |circ_a| switch (body_b.shape) {
-                .rectangle => blk: {
-                    const circle_a = Circle.new(body_a.getCenter(), circ_a.radius);
-                    const aabb_b = body_b.getAabb();
-                    // Circle.getMtvWithAabb already returns the MTV to move circle away from rectangle.
-                    break :blk circle_a.getMtvWithAabb(aabb_b);
-                },
-                .circle => |circ_b| blk: {
-                    const circle_a = Circle.new(body_a.getCenter(), circ_a.radius);
-                    const circle_b = Circle.new(body_b.getCenter(), circ_b.radius);
-                    break :blk circle_a.getMtv(circle_b);
-                },
-            },
+        pub const BodyAccessError = error{
+            InvalidIndex,
+            StaleGeneration,
         };
 
-        if (mtv) |collision_mtv| {
-            const normal = collision_mtv.norm();
-            const collision = Collision{
-                .type = Collision.determineType(body_a, body_b),
-                .body_a = pair.a,
-                .body_b = pair.b,
-                .mtv = collision_mtv,
-                .normal = normal,
+        pub const Config = struct {
+            gravity: m.Vec2 = DEFAULT_GRAVITY,
+            terminal_velocity: f32 = DEFAULT_TERMINAL_VELOCITY,
+            /// Cell size for spatial hash grid.
+            /// Should be roughly the size of the average game object.
+            spatial_grid_cell_size: f32 = 64,
+            /// Contact listener for collision callbacks.
+            contact_listener: ContactListener = .init,
+        };
+
+        pub const Body = BodyGeneric(BodyUserData);
+
+        /// Callback function type for collision events.
+        pub const CollisionCallback = *const fn (world: *Self, event: *CollisionEvent) void;
+
+        pub const ContactListener = struct {
+            pub const init: @This() = .{ .on_contact = null };
+            on_contact: ?CollisionCallback,
+        };
+
+        fn determineCollisionType(body_a: *const Body, body_b: *const Body) Collision.Type {
+            if (body_a.isStatic() or body_b.isStatic()) {
+                return .dynamic_static;
+            } else {
+                return .dynamic_dynamic;
+            }
+        }
+
+        const Self = @This();
+
+        allocator: std.mem.Allocator,
+        gravity: m.Vec2,
+        terminal_velocity: f32,
+        bodies: std.ArrayList(Body),
+        /// Generation counter for each body slot
+        body_generations: std.ArrayList(BodyId.GenerationType),
+        /// Active flag for each body slot
+        /// TODO: Maybe merge this into the body_generations list?
+        body_active: std.ArrayList(bool),
+        /// List of free body indices that can be reused
+        free_body_ids: std.ArrayList(BodyId.IndexType),
+        /// List of body indices that need to be destroyed at the end of the physics step
+        destroy_body_ids: std.ArrayList(BodyId),
+        /// Global generation counter
+        next_generation: BodyId.GenerationType,
+        /// dynamic/static collisions
+        collisions_ds: std.ArrayList(Collision),
+        /// dynamic/dynamic collisions
+        collisions_dd: std.ArrayList(Collision),
+        /// Spatial hash grid for broad phase collision detection
+        spatial_grid: SpatialHashGrid,
+        /// Contact listener for custom collision callbacks
+        contact_listener: ContactListener,
+        /// List of current collision events being processed
+        collision_events: std.ArrayList(CollisionEvent),
+
+        pub fn init(allocator: std.mem.Allocator, config: Config) Self {
+            return Self{
+                .allocator = allocator,
+                .gravity = config.gravity,
+                .terminal_velocity = config.terminal_velocity,
+                .bodies = std.ArrayList(Body){},
+                .body_generations = std.ArrayList(BodyId.GenerationType){},
+                .body_active = std.ArrayList(bool){},
+                .free_body_ids = std.ArrayList(BodyId.IndexType){},
+                .destroy_body_ids = std.ArrayList(BodyId){},
+                .next_generation = 0,
+                .collisions_ds = std.ArrayList(Collision){},
+                .collisions_dd = std.ArrayList(Collision){},
+                .spatial_grid = SpatialHashGrid.init(allocator, config.spatial_grid_cell_size),
+                .contact_listener = config.contact_listener,
+                .collision_events = std.ArrayList(CollisionEvent){},
             };
-            try self.collision_events.append(self.allocator, CollisionEvent{
-                .body_a = body_a,
-                .body_b = body_b,
-                .collision = collision,
-                .disable_physics = false,
-            });
         }
-    }
 
-    // Invoke `on_contact` callback for each collision event if present.
-    for (self.collision_events.items) |*event| {
-        if (self.contact_listener.on_contact) |callback| {
-            callback(self, event);
+        pub fn deinit(self: *Self) void {
+            self.spatial_grid.deinit();
+            self.collisions_ds.deinit(self.allocator);
+            self.collisions_dd.deinit(self.allocator);
+            self.collision_events.deinit(self.allocator);
+            self.destroy_body_ids.deinit(self.allocator);
+            self.free_body_ids.deinit(self.allocator);
+            self.body_active.deinit(self.allocator);
+            self.body_generations.deinit(self.allocator);
+            self.bodies.deinit(self.allocator);
         }
-    }
 
-    // Process all collision events in order.
-    for (self.collision_events.items) |event| {
-        // Skip collision if physics were disabled in `on_contact` callback.
-        if (event.disable_physics) continue;
-
-        const collision = event.collision;
-        // Append collision to appropriate list based on its type.
-        switch (event.collision.type) {
-            .dynamic_static => try self.collisions_ds.append(self.allocator, collision),
-            .dynamic_dynamic => try self.collisions_dd.append(self.allocator, collision),
+        pub fn clear(self: *Self) void {
+            self.next_generation = 0;
+            self.spatial_grid.clear();
+            self.collisions_ds.clearRetainingCapacity();
+            self.collisions_dd.clearRetainingCapacity();
+            self.collision_events.clearRetainingCapacity();
+            self.destroy_body_ids.clearRetainingCapacity();
+            self.free_body_ids.clearRetainingCapacity();
+            self.body_active.clearRetainingCapacity();
+            self.body_generations.clearRetainingCapacity();
+            self.bodies.clearRetainingCapacity();
         }
-        // Store the penetration in both bodies.
-        event.body_a.accumulatePenetration(collision.mtv);
-        event.body_b.accumulatePenetration(collision.mtv.negate());
-    }
-}
 
-fn resolveCollisions(self: *Self) !void {
-    const zone = tracy.initZone(@src(), .{});
-    defer zone.deinit();
+        pub fn update(self: *Self, timestep: f32, substeps: usize) !void {
+            const zone = tracy.initZone(@src(), .{});
+            defer zone.deinit();
 
-    // Resolve dynamic-static collisions first, then dynamic-dynamic collisions.
-    // This ensures proper collision resolution order without sorting.
-    for (self.collisions_ds.items) |collision| {
-        try self.resolveDynamicStaticCollision(collision);
-    }
-    for (self.collisions_dd.items) |collision| {
-        try self.resolveDynamicDynamicCollision(collision);
-    }
-}
+            const substep = timestep / @as(f32, @floatFromInt(substeps));
 
-fn resolveDynamicStaticCollision(self: *Self, collision: Collision) !void {
-    const zone = tracy.initZone(@src(), .{});
-    defer zone.deinit();
+            const zone_apply_forces = tracy.initZone(@src(), .{ .name = "update:apply_forces" });
+            // Apply forces.
+            for (self.bodies.items, 0..) |*body, i| {
+                if (!self.isBodyActive(i)) continue;
 
-    const body_a = try self.getBody(collision.body_a);
-    const body_b = try self.getBody(collision.body_b);
+                // Reset penetration from previous physics step.
+                body.penetration = m.Vec2.zero();
+                // Apply gravity and accelerate.
+                body.applyForce(self.gravity.scale(body.mass));
+                body.accelerate(timestep);
+                body.applyDamping(timestep);
+            }
+            zone_apply_forces.deinit();
 
-    // Determine which body is dynamic and move it out of collision
-    if (body_a.isDynamic()) {
-        body_a.position = body_a.position.add(collision.mtv);
-        const velocity_along_normal = body_a.velocity.dot(collision.normal);
-        if (velocity_along_normal < 0) {
-            body_a.velocity = body_a.velocity.sub(collision.normal.scale(velocity_along_normal));
+            // Integration and collision detection.
+            for (0..substeps) |_| {
+                // Integrate bodies.
+                for (self.bodies.items, 0..) |*body, i| {
+                    if (!self.isBodyActive(i)) continue;
+                    body.integrate(substep);
+                }
+
+                // Detect and resolve collisions.
+                try self.detectCollisions();
+                try self.resolveCollisions();
+
+                // Destroy marked bodies.
+                // This must happend at the end of each substep to make sure the same
+                // collisions won't appear in the next substep, to not waste any
+                // computation on already discarded bodies.
+                // Since every loop over `self.bodies.items` checks if the current body
+                // is active, it is safe to delete bodies after collision resolution.
+                for (self.destroy_body_ids.items) |id| {
+                    // Skip potential duplicates in `destroy_body_ids`.
+                    if (!self.isBodyActive(id.index)) continue;
+                    try self.destroyBody(id);
+                }
+                self.destroy_body_ids.clearRetainingCapacity();
+
+                // Account for floating point inaccuracies.
+                for (self.bodies.items, 0..) |*body, i| {
+                    if (!self.isBodyActive(i)) continue;
+                    if (body.velocity.length() < 0.1) {
+                        body.velocity = m.Vec2.zero();
+                    }
+                }
+            }
+
+            const zone_reset = tracy.initZone(@src(), .{ .name = "update:reset" });
+            // Reset accelerations and clamp velocities.
+            for (self.bodies.items, 0..) |*body, i| {
+                if (!self.isBodyActive(i)) continue;
+                body.acceleration = m.Vec2.zero();
+                if (body.velocity.length() > self.terminal_velocity) {
+                    body.velocity = body.velocity.norm().scale(self.terminal_velocity);
+                }
+            }
+            zone_reset.deinit();
         }
-    } else {
-        body_b.position = body_b.position.add(collision.mtv.negate());
-        const velocity_along_normal = body_b.velocity.dot(collision.normal.negate());
-        if (velocity_along_normal < 0) {
-            body_b.velocity = body_b.velocity.sub(collision.normal.scale(-velocity_along_normal));
+
+        pub inline fn validateBodyId(self: *const Self, id: BodyId) BodyAccessError!void {
+            if (id.index >= self.bodies.items.len) return BodyAccessError.InvalidIndex;
+            if (self.body_generations.items[id.index] != id.generation) return BodyAccessError.StaleGeneration;
         }
-    }
-}
 
-fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) !void {
-    const zone = tracy.initZone(@src(), .{});
-    defer zone.deinit();
-
-    const body_a = try self.getBody(collision.body_a);
-    const body_b = try self.getBody(collision.body_b);
-
-    // Position correction:
-    // Weight corrections based on the velocity of eacht body.
-    // Bodies moving faster into the collision should get pushed back more.
-    const speed_a = @abs(body_a.velocity.dot(collision.normal));
-    const speed_b = @abs(body_b.velocity.dot(collision.normal.negate()));
-    const total_speed = speed_a + speed_b;
-    const half_mtv = collision.mtv.scale(0.5);
-    const corrections: struct { a: m.Vec2, b: m.Vec2 } = if (total_speed > 0)
-        .{
-            .a = collision.mtv.scale(speed_a / total_speed),
-            .b = collision.mtv.scale(speed_b / total_speed),
+        pub inline fn isBodyActive(self: *const Self, index: BodyId.IndexType) bool {
+            if (index >= self.body_active.items.len) return false;
+            return self.body_active.items[index];
         }
-    else
-        .{ .a = half_mtv, .b = half_mtv };
-    // Apply position corrections.
-    body_a.position = body_a.position.add(corrections.a);
-    body_b.position = body_b.position.sub(corrections.b);
 
-    // Velocity correction:
-    // Calculate relative velocity along collision normal.
-    const relative_velocity = body_a.velocity.sub(body_b.velocity);
-    const velocity_along_normal = relative_velocity.dot(collision.normal);
-    // Only resolve velocity if bodies are moving towards each other.
-    if (velocity_along_normal < 0) {
-        // Calculate combined restitution (minimum of both bodies)
-        const restitution = @min(body_a.restitution, body_b.restitution);
-        if (restitution == 0) {
-            // Fully inelastic collision: zero out velocities along normal
-            const velocity_a_along_normal = body_a.velocity.dot(collision.normal);
-            const velocity_b_along_normal = body_b.velocity.dot(collision.normal);
-            body_a.velocity = body_a.velocity.sub(collision.normal.scale(velocity_a_along_normal));
-            body_b.velocity = body_b.velocity.sub(collision.normal.scale(velocity_b_along_normal));
-        } else {
-            // Elastic collision: conserve momentum with restitution
-            const impulse_magnitude = -(1 + restitution) * velocity_along_normal / (body_a.inv_mass + body_b.inv_mass);
-            const impulse = collision.normal.scale(impulse_magnitude);
-            // Apply equal and opposite impulses
-            body_a.velocity = body_a.velocity.add(impulse.scale(body_a.inv_mass));
-            body_b.velocity = body_b.velocity.sub(impulse.scale(body_b.inv_mass));
+        pub fn createBody(self: *Self, body: Body) !BodyId {
+            const index: BodyId.IndexType = if (self.free_body_ids.pop()) |free_index| blk: {
+                // Reuse a free index.
+                self.bodies.items[free_index] = body;
+                self.body_active.items[free_index] = true;
+                break :blk free_index;
+            } else blk: {
+                // Add new body to the end.
+                try self.bodies.append(self.allocator, body);
+                try self.body_generations.append(self.allocator, 0);
+                try self.body_active.append(self.allocator, true);
+                break :blk self.bodies.items.len - 1;
+            };
+
+            return BodyId.new(index, self.body_generations.items[index]);
         }
-    }
+
+        pub fn getBody(self: *const Self, id: BodyId) BodyAccessError!*Body {
+            try self.validateBodyId(id);
+            return &self.bodies.items[id.index];
+        }
+
+        /// Destry a body immediately.
+        /// NOTE: Do not use this in ContactListener callbacks.
+        pub fn destroyBody(self: *Self, id: BodyId) !void {
+            try self.validateBodyId(id);
+            // Mark body as inactive.
+            self.body_active.items[id.index] = false;
+            // Remove from spatial grid to prevent phantom collisions.
+            self.spatial_grid.removeBody(id);
+            // Increment global generation counter and assign to this slot.
+            self.next_generation += 1;
+            self.body_generations.items[id.index] = self.next_generation;
+            // Add index to free list for reuse.
+            try self.free_body_ids.append(self.allocator, id.index);
+        }
+
+        /// Defer the destruction of a body to the end of the current physics substep.
+        /// This function can be used in ContactListener callbacks.
+        pub fn destroyBodyDeferred(self: *TestWorld, id: BodyId) !void {
+            try self.destroy_body_ids.append(self.allocator, id);
+        }
+
+        fn detectCollisions(self: *Self) !void {
+            const zone = tracy.initZone(@src(), .{});
+            defer zone.deinit();
+
+            // Clear previous collisions
+            self.collisions_ds.clearRetainingCapacity();
+            self.collisions_dd.clearRetainingCapacity();
+            self.collision_events.clearRetainingCapacity();
+
+            const pairs = try self.detectCollisionsBroadPhase();
+            try self.detectCollisionsNarrowPhase(pairs);
+        }
+
+        fn detectCollisionsBroadPhase(self: *TestWorld) ![]const SpatialHashGrid.BodyPair {
+            const zone = tracy.initZone(@src(), .{});
+            defer zone.deinit();
+
+            const zone_spatial_grid = tracy.initZone(@src(), .{ .name = "detectCollisionsBroadPhase:update" });
+            // Initialize tracking for current body count.
+            try self.spatial_grid.initIncrementalTracking(self.bodies.items.len);
+
+            // Incrementally update bodies that have moved.
+            for (self.bodies.items, 0..) |*body, i| {
+                if (!self.isBodyActive(i)) continue;
+                const aabb = body.getAabb();
+                try self.spatial_grid.updateBody(BodyId.new(i, self.body_generations.items[i]), aabb);
+            }
+            zone_spatial_grid.deinit();
+
+            // Get potential collision pairs from the spatial grid
+            const pairs = try self.spatial_grid.getPairs();
+
+            return pairs;
+        }
+
+        fn detectCollisionsNarrowPhase(self: *TestWorld, pairs: []const SpatialHashGrid.BodyPair) !void {
+            const zone = tracy.initZone(@src(), .{});
+            defer zone.deinit();
+
+            for (pairs) |pair| {
+                const body_a = &self.bodies.items[pair.a.index];
+                const body_b = &self.bodies.items[pair.b.index];
+
+                // Skip static vs static pairs.
+                // TODO: Move this check to broad phase.
+                if (body_a.isStatic() and body_b.isStatic()) continue;
+
+                // Check if bodies can collide.
+                if (!CollisionFilter.canCollide(body_a.collision_filter, body_b.collision_filter)) continue;
+
+                // Detect collision based on shape types.
+                const mtv = switch (body_a.shape) {
+                    .rectangle => switch (body_b.shape) {
+                        .rectangle => blk: {
+                            const aabb_a = body_a.getAabb();
+                            const aabb_b = body_b.getAabb();
+                            break :blk aabb_a.getMtv(aabb_b);
+                        },
+                        .circle => |circ_b| blk: {
+                            const circle_b = Circle.new(body_b.getCenter(), circ_b.radius);
+                            const aabb_a = body_a.getAabb();
+                            // We want the MTV to move body_a away from body_b, so we negate circle_b's MTV.
+                            if (circle_b.getMtvWithAabb(aabb_a)) |mtv_result| {
+                                break :blk mtv_result.negate();
+                            }
+                            break :blk null;
+                        },
+                    },
+                    .circle => |circ_a| switch (body_b.shape) {
+                        .rectangle => blk: {
+                            const circle_a = Circle.new(body_a.getCenter(), circ_a.radius);
+                            const aabb_b = body_b.getAabb();
+                            // Circle.getMtvWithAabb already returns the MTV to move circle away from rectangle.
+                            break :blk circle_a.getMtvWithAabb(aabb_b);
+                        },
+                        .circle => |circ_b| blk: {
+                            const circle_a = Circle.new(body_a.getCenter(), circ_a.radius);
+                            const circle_b = Circle.new(body_b.getCenter(), circ_b.radius);
+                            break :blk circle_a.getMtv(circle_b);
+                        },
+                    },
+                };
+
+                if (mtv) |collision_mtv| {
+                    const normal = collision_mtv.norm();
+                    const collision = Collision{
+                        .type = determineCollisionType(body_a, body_b),
+                        .body_a = pair.a,
+                        .body_b = pair.b,
+                        .mtv = collision_mtv,
+                        .normal = normal,
+                    };
+                    try self.collision_events.append(self.allocator, CollisionEvent{
+                        .collision = collision,
+                        .disable_physics = false,
+                    });
+                }
+            }
+
+            // Invoke `on_contact` callback for each collision event if present.
+            for (self.collision_events.items) |*event| {
+                if (self.contact_listener.on_contact) |callback| {
+                    callback(self, event);
+                }
+            }
+
+            // Process all collision events in order.
+            for (self.collision_events.items) |event| {
+                // Skip collision if physics were disabled in `on_contact` callback.
+                if (event.disable_physics) continue;
+
+                const collision = event.collision;
+                // Append collision to appropriate list based on its type.
+                switch (event.collision.type) {
+                    .dynamic_static => try self.collisions_ds.append(self.allocator, collision),
+                    .dynamic_dynamic => try self.collisions_dd.append(self.allocator, collision),
+                }
+                const body_a = try self.getBody(event.collision.body_a);
+                const body_b = try self.getBody(event.collision.body_b);
+                // Store the penetration in both bodies.
+                body_a.accumulatePenetration(collision.mtv);
+                body_b.accumulatePenetration(collision.mtv.negate());
+            }
+        }
+
+        fn resolveCollisions(self: *Self) !void {
+            const zone = tracy.initZone(@src(), .{});
+            defer zone.deinit();
+
+            // Resolve dynamic-static collisions first, then dynamic-dynamic collisions.
+            // This ensures proper collision resolution order without sorting.
+            for (self.collisions_ds.items) |collision| {
+                try self.resolveDynamicStaticCollision(collision);
+            }
+            for (self.collisions_dd.items) |collision| {
+                try self.resolveDynamicDynamicCollision(collision);
+            }
+        }
+
+        fn resolveDynamicStaticCollision(self: *Self, collision: Collision) !void {
+            const zone = tracy.initZone(@src(), .{});
+            defer zone.deinit();
+
+            const body_a = try self.getBody(collision.body_a);
+            const body_b = try self.getBody(collision.body_b);
+
+            // Determine which body is dynamic and move it out of collision
+            if (body_a.isDynamic()) {
+                body_a.position = body_a.position.add(collision.mtv);
+                const velocity_along_normal = body_a.velocity.dot(collision.normal);
+                if (velocity_along_normal < 0) {
+                    body_a.velocity = body_a.velocity.sub(collision.normal.scale(velocity_along_normal));
+                }
+            } else {
+                body_b.position = body_b.position.add(collision.mtv.negate());
+                const velocity_along_normal = body_b.velocity.dot(collision.normal.negate());
+                if (velocity_along_normal < 0) {
+                    body_b.velocity = body_b.velocity.sub(collision.normal.scale(-velocity_along_normal));
+                }
+            }
+        }
+
+        fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) !void {
+            const zone = tracy.initZone(@src(), .{});
+            defer zone.deinit();
+
+            const body_a = try self.getBody(collision.body_a);
+            const body_b = try self.getBody(collision.body_b);
+
+            // Position correction:
+            // Weight corrections based on the velocity of eacht body.
+            // Bodies moving faster into the collision should get pushed back more.
+            const speed_a = @abs(body_a.velocity.dot(collision.normal));
+            const speed_b = @abs(body_b.velocity.dot(collision.normal.negate()));
+            const total_speed = speed_a + speed_b;
+            const half_mtv = collision.mtv.scale(0.5);
+            const corrections: struct { a: m.Vec2, b: m.Vec2 } = if (total_speed > 0)
+                .{
+                    .a = collision.mtv.scale(speed_a / total_speed),
+                    .b = collision.mtv.scale(speed_b / total_speed),
+                }
+            else
+                .{ .a = half_mtv, .b = half_mtv };
+            // Apply position corrections.
+            body_a.position = body_a.position.add(corrections.a);
+            body_b.position = body_b.position.sub(corrections.b);
+
+            // Velocity correction:
+            // Calculate relative velocity along collision normal.
+            const relative_velocity = body_a.velocity.sub(body_b.velocity);
+            const velocity_along_normal = relative_velocity.dot(collision.normal);
+            // Only resolve velocity if bodies are moving towards each other.
+            if (velocity_along_normal < 0) {
+                // Calculate combined restitution (minimum of both bodies)
+                const restitution = @min(body_a.restitution, body_b.restitution);
+                if (restitution == 0) {
+                    // Fully inelastic collision: zero out velocities along normal
+                    const velocity_a_along_normal = body_a.velocity.dot(collision.normal);
+                    const velocity_b_along_normal = body_b.velocity.dot(collision.normal);
+                    body_a.velocity = body_a.velocity.sub(collision.normal.scale(velocity_a_along_normal));
+                    body_b.velocity = body_b.velocity.sub(collision.normal.scale(velocity_b_along_normal));
+                } else {
+                    // Elastic collision: conserve momentum with restitution
+                    const impulse_magnitude = -(1 + restitution) * velocity_along_normal / (body_a.inv_mass + body_b.inv_mass);
+                    const impulse = collision.normal.scale(impulse_magnitude);
+                    // Apply equal and opposite impulses
+                    body_a.velocity = body_a.velocity.add(impulse.scale(body_a.inv_mass));
+                    body_b.velocity = body_b.velocity.sub(impulse.scale(body_b.inv_mass));
+                }
+            }
+        }
+    };
 }
 
 //------------------------------------------------------------------------------
 // Tests
 //------------------------------------------------------------------------------
 
-const World = Self;
+const TestWorld = World(void);
 
 /// Function to create a collision with the specified type.
 /// Do not use this for actual collision detection.
@@ -454,14 +475,14 @@ fn mockCollisionType(collision_type: Collision.Type) Collision {
 }
 
 test "World.detectCollisions: Should detect collision between overlapping dynamic bodies" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body1_id = try world.createBody(Body.new(.dynamic, .{
+    const body1_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
-    const body2_id = try world.createBody(Body.new(.dynamic, .{
+    const body2_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(1, 1),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
@@ -478,14 +499,14 @@ test "World.detectCollisions: Should detect collision between overlapping dynami
 }
 
 test "World.detectCollisions: Should not detect collision between non-overlapping bodies" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body1 = Body.new(.dynamic, .{
+    const body1 = TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     });
-    const body2 = Body.new(.dynamic, .{
+    const body2 = TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(3, 3),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     });
@@ -499,14 +520,14 @@ test "World.detectCollisions: Should not detect collision between non-overlappin
 }
 
 test "World.detectCollisions: Should skip static vs static collisions" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body1 = Body.new(.static, .{
+    const body1 = TestWorld.Body.new(.static, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     });
-    const body2 = Body.new(.static, .{
+    const body2 = TestWorld.Body.new(.static, .{
         .position = m.Vec2.new(1, 1),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     });
@@ -520,18 +541,18 @@ test "World.detectCollisions: Should skip static vs static collisions" {
 }
 
 test "World.detectCollisions: Should accumulate penetrations correctly (use deepest penetration on each axis)" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body1_id = try world.createBody(Body.new(.dynamic, .{
+    const body1_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
     }));
-    const body2_id = try world.createBody(Body.new(.dynamic, .{
+    const body2_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 2),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
     }));
-    const body3_id = try world.createBody(Body.new(.dynamic, .{
+    const body3_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(3, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
@@ -551,14 +572,14 @@ test "World.detectCollisions: Should accumulate penetrations correctly (use deep
 }
 
 test "World.detectCollisions: Should classify collision types correctly" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const dynamic = Body.new(.dynamic, .{
+    const dynamic = TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     });
-    const static = Body.new(.static, .{
+    const static = TestWorld.Body.new(.static, .{
         .position = m.Vec2.new(1, 1),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     });
@@ -574,14 +595,14 @@ test "World.detectCollisions: Should classify collision types correctly" {
 }
 
 test "World.detectCollisions: Should detect circle vs circle collision" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .circle = .{ .radius = 2 } },
     }));
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(3, 0),
         .shape = .{ .circle = .{ .radius = 2 } },
     }));
@@ -596,14 +617,14 @@ test "World.detectCollisions: Should detect circle vs circle collision" {
 }
 
 test "World.detectCollisions: Should detect rectangle vs circle collision" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    _ = try world.createBody(Body.new(.static, .{
+    _ = try world.createBody(TestWorld.Body.new(.static, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
     }));
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(2, 2),
         .shape = .{ .circle = .{ .radius = 1.5 } },
     }));
@@ -618,14 +639,14 @@ test "World.detectCollisions: Should detect rectangle vs circle collision" {
 }
 
 test "World.detectCollisions: Should not detect non-overlapping circle vs rectangle" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    _ = try world.createBody(Body.new(.static, .{
+    _ = try world.createBody(TestWorld.Body.new(.static, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(5, 5),
         .shape = .{ .circle = .{ .radius = 1 } },
     }));
@@ -637,14 +658,14 @@ test "World.detectCollisions: Should not detect non-overlapping circle vs rectan
 }
 
 test "World.detectCollisions: Should produce consistent MTV directions" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .circle = .{ .radius = 2 } },
     }));
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(3, 0),
         .shape = .{ .circle = .{ .radius = 2 } },
     }));
@@ -659,14 +680,14 @@ test "World.detectCollisions: Should produce consistent MTV directions" {
 }
 
 test "World.detectCollisions: Should resolve dynamic vs static collision" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const dynamic = Body.new(.dynamic, .{
+    const dynamic = TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     });
-    const static = Body.new(.static, .{
+    const static = TestWorld.Body.new(.static, .{
         .position = m.Vec2.new(1, 1),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     });
@@ -684,14 +705,14 @@ test "World.detectCollisions: Should resolve dynamic vs static collision" {
 }
 
 test "World.resolveCollisions: Should resolve dynamic vs dynamic collision" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body1 = Body.new(.dynamic, .{
+    const body1 = TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     });
-    const body2 = Body.new(.dynamic, .{
+    const body2 = TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(1, 1),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     });
@@ -714,10 +735,10 @@ test "World.resolveCollisions: Should resolve dynamic vs dynamic collision" {
 }
 
 test "World.update: Should clamp velocity to terminal velocity" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const id = try world.createBody(Body.new(.dynamic, .{
+    const id = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(1, 1) } },
     }));
@@ -745,7 +766,7 @@ fn resetTestState() void {
     test_disable_physics = false;
 }
 
-fn testContactCallback(world: *World, event: *CollisionEvent) void {
+fn testContactCallback(world: *TestWorld, event: *CollisionEvent) void {
     _ = world;
     test_collision_count += 1;
     test_body_a_id = event.collision.body_a;
@@ -758,16 +779,16 @@ fn testContactCallback(world: *World, event: *CollisionEvent) void {
 test "ContactListener: Should call on_contact callback when collision occurs" {
     resetTestState();
 
-    var world = World.init(std.testing.allocator, .{
+    var world = TestWorld.init(std.testing.allocator, .{
         .contact_listener = .{ .on_contact = testContactCallback },
     });
     defer world.deinit();
 
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(1, 1),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
@@ -782,16 +803,16 @@ test "ContactListener: Should call on_contact callback when collision occurs" {
 test "ContactListener: Should not call callback when no collision occurs" {
     resetTestState();
 
-    var world = World.init(std.testing.allocator, .{
+    var world = TestWorld.init(std.testing.allocator, .{
         .contact_listener = .{ .on_contact = testContactCallback },
     });
     defer world.deinit();
 
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(5, 5),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
@@ -804,21 +825,21 @@ test "ContactListener: Should not call callback when no collision occurs" {
 test "ContactListener: Should call callback multiple times for multiple collisions" {
     resetTestState();
 
-    var world = World.init(std.testing.allocator, .{
+    var world = TestWorld.init(std.testing.allocator, .{
         .contact_listener = .{ .on_contact = testContactCallback },
     });
     defer world.deinit();
 
     // Create three overlapping bodies.
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
     }));
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(2, 2),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
     }));
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(1, 1),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
     }));
@@ -834,16 +855,16 @@ test "ContactListener: Should disable physics when event.disable_physics is set"
     // Make the test callback disable physics.
     test_disable_physics = true;
 
-    var world = World.init(std.testing.allocator, .{
+    var world = TestWorld.init(std.testing.allocator, .{
         .contact_listener = .{ .on_contact = testContactCallback },
     });
     defer world.deinit();
 
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(1, 1),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
@@ -857,16 +878,16 @@ test "ContactListener: Should disable physics when event.disable_physics is set"
 }
 
 test "ContactListener: Should work with null callback" {
-    var world = World.init(std.testing.allocator, .{
+    var world = TestWorld.init(std.testing.allocator, .{
         .contact_listener = .{ .on_contact = null },
     });
     defer world.deinit();
 
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(1, 1),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
@@ -880,16 +901,16 @@ test "ContactListener: Should work with null callback" {
 test "ContactListener: Should provide correct collision information in callback" {
     resetTestState();
 
-    var world = World.init(std.testing.allocator, .{
+    var world = TestWorld.init(std.testing.allocator, .{
         .contact_listener = .{ .on_contact = testContactCallback },
     });
     defer world.deinit();
 
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
-    _ = try world.createBody(Body.new(.static, .{
+    _ = try world.createBody(TestWorld.Body.new(.static, .{
         .position = m.Vec2.new(1, 1),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
@@ -904,10 +925,10 @@ test "ContactListener: Should provide correct collision information in callback"
 }
 
 test "World.destroyBody: Should invalidate BodyId after destruction" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
-    const body_id = try world.createBody(Body.new(.dynamic, .{
+    const body_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
@@ -919,19 +940,19 @@ test "World.destroyBody: Should invalidate BodyId after destruction" {
     try world.destroyBody(body_id);
 
     // Should now return StaleGeneration error.
-    try std.testing.expectError(BodyAccessError.StaleGeneration, world.getBody(body_id));
+    try std.testing.expectError(TestWorld.BodyAccessError.StaleGeneration, world.getBody(body_id));
 }
 
 test "World.destroyBody: Should reuse indices efficiently" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
     // Add two bodies.
-    const body1_id = try world.createBody(Body.new(.dynamic, .{
+    const body1_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
-    const body2_id = try world.createBody(Body.new(.dynamic, .{
+    const body2_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(1, 1),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
@@ -944,7 +965,7 @@ test "World.destroyBody: Should reuse indices efficiently" {
     try world.destroyBody(body1_id);
 
     // Add a new body - should reuse index 0.
-    const body3_id = try world.createBody(Body.new(.dynamic, .{
+    const body3_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(2, 2),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
@@ -954,7 +975,7 @@ test "World.destroyBody: Should reuse indices efficiently" {
     try std.testing.expectEqual(2, world.bodies.items.len); // Array length unchanged.
 
     // Old body1_id should still be invalid.
-    try std.testing.expectError(BodyAccessError.StaleGeneration, world.getBody(body1_id));
+    try std.testing.expectError(TestWorld.BodyAccessError.StaleGeneration, world.getBody(body1_id));
 
     // New body3_id should be valid.
     _ = try world.getBody(body3_id);
@@ -964,41 +985,41 @@ test "World.destroyBody: Should reuse indices efficiently" {
 }
 
 test "World.destroyBody: Should handle invalid BodyId" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
     // Invalid index.
     const invalid_id = BodyId.new(999, 0);
-    try std.testing.expectError(BodyAccessError.InvalidIndex, world.destroyBody(invalid_id));
+    try std.testing.expectError(TestWorld.BodyAccessError.InvalidIndex, world.destroyBody(invalid_id));
 
     // Add and destroy a body.
-    const body_id = try world.createBody(Body.new(.dynamic, .{
+    const body_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
     try world.destroyBody(body_id);
 
     // Try to destroy again with stale generation.
-    try std.testing.expectError(BodyAccessError.StaleGeneration, world.destroyBody(body_id));
+    try std.testing.expectError(TestWorld.BodyAccessError.StaleGeneration, world.destroyBody(body_id));
 }
 
 test "World.getBody: Should handle invalid indices" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
     const invalid_id = BodyId.new(999, 0);
-    try std.testing.expectError(BodyAccessError.InvalidIndex, world.getBody(invalid_id));
+    try std.testing.expectError(TestWorld.BodyAccessError.InvalidIndex, world.getBody(invalid_id));
 }
 
 test "World.createBody: Should handle multiple destroy/create cycles" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
     var body_ids: [5]BodyId = undefined;
 
     // Create 5 bodies.
     for (0..5) |i| {
-        body_ids[i] = try world.createBody(Body.new(.dynamic, .{
+        body_ids[i] = try world.createBody(TestWorld.Body.new(.dynamic, .{
             .position = m.Vec2.new(@floatFromInt(i), @floatFromInt(i)),
             .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
         }));
@@ -1011,11 +1032,11 @@ test "World.createBody: Should handle multiple destroy/create cycles" {
     try world.destroyBody(body_ids[3]);
 
     // Create 2 new bodies - should reuse indices 3 and 1 (in that order due to stack).
-    const new_body1 = try world.createBody(Body.new(.dynamic, .{
+    const new_body1 = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(10, 10),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
-    const new_body2 = try world.createBody(Body.new(.dynamic, .{
+    const new_body2 = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(11, 11),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
     }));
@@ -1026,8 +1047,8 @@ test "World.createBody: Should handle multiple destroy/create cycles" {
     try std.testing.expectEqual(1, new_body2.generation); // First destroy, so generation 1
 
     // Verify old IDs are invalid.
-    try std.testing.expectError(BodyAccessError.StaleGeneration, world.getBody(body_ids[1]));
-    try std.testing.expectError(BodyAccessError.StaleGeneration, world.getBody(body_ids[3]));
+    try std.testing.expectError(TestWorld.BodyAccessError.StaleGeneration, world.getBody(body_ids[1]));
+    try std.testing.expectError(TestWorld.BodyAccessError.StaleGeneration, world.getBody(body_ids[3]));
 
     // Verify valid IDs still work.
     _ = try world.getBody(body_ids[0]);
@@ -1038,15 +1059,15 @@ test "World.createBody: Should handle multiple destroy/create cycles" {
 }
 
 test "World.destroyBody: Should remove body from spatial grid to prevent phantom collisions" {
-    var world = World.init(std.testing.allocator, .{});
+    var world = TestWorld.init(std.testing.allocator, .{});
     defer world.deinit();
 
     // Create two overlapping bodies.
-    const body1_id = try world.createBody(Body.new(.dynamic, .{
+    const body1_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(0, 0),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
     }));
-    _ = try world.createBody(Body.new(.dynamic, .{
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(2, 2),
         .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
     }));
