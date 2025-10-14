@@ -238,7 +238,7 @@ pub fn World(BodyUserData: type) type {
 
         /// Defer the destruction of a body to the end of the current physics substep.
         /// This function can be used in ContactListener callbacks.
-        pub fn destroyBodyDeferred(self: *TestWorld, id: BodyId) !void {
+        pub fn destroyBodyDeferred(self: *Self, id: BodyId) !void {
             try self.destroy_body_ids.append(self.allocator, id);
         }
 
@@ -255,7 +255,7 @@ pub fn World(BodyUserData: type) type {
             try self.detectCollisionsNarrowPhase(pairs);
         }
 
-        fn detectCollisionsBroadPhase(self: *TestWorld) ![]const SpatialHashGrid.BodyPair {
+        fn detectCollisionsBroadPhase(self: *Self) ![]const SpatialHashGrid.BodyPair {
             const zone = tracy.initZone(@src(), .{});
             defer zone.deinit();
 
@@ -277,7 +277,7 @@ pub fn World(BodyUserData: type) type {
             return pairs;
         }
 
-        fn detectCollisionsNarrowPhase(self: *TestWorld, pairs: []const SpatialHashGrid.BodyPair) !void {
+        fn detectCollisionsNarrowPhase(self: *Self, pairs: []const SpatialHashGrid.BodyPair) !void {
             const zone = tracy.initZone(@src(), .{});
             defer zone.deinit();
 
