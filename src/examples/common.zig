@@ -5,7 +5,7 @@ const rl = @import("raylib");
 const phiz = @import("phiz");
 const m = phiz.m;
 
-pub const World = phiz.world.World(void);
+pub const World = phiz.World(void);
 
 pub const State = struct {
     const Debugger = struct {
