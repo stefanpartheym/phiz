@@ -207,9 +207,16 @@ pub fn World(BodyUserData: type) type {
                 break :blk free_index;
             } else blk: {
                 // Add new body to the end.
-                try self.bodies.append(self.allocator, body);
-                try self.body_generations.append(self.allocator, 0);
-                try self.body_active.append(self.allocator, true);
+                // Pre-allocate all three parallel arrays before modifying any
+                // of them, so that a failure doesn't leave them with mismatched
+                // lengths.
+                const new_len = self.bodies.items.len + 1;
+                try self.bodies.ensureTotalCapacity(self.allocator, new_len);
+                try self.body_generations.ensureTotalCapacity(self.allocator, new_len);
+                try self.body_active.ensureTotalCapacity(self.allocator, new_len);
+                self.bodies.appendAssumeCapacity(body);
+                self.body_generations.appendAssumeCapacity(0);
+                self.body_active.appendAssumeCapacity(true);
                 break :blk self.bodies.items.len - 1;
             };
 
