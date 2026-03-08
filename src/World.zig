@@ -378,13 +378,39 @@ pub fn World(BodyUserData: type) type {
             const zone = tracy.initZone(@src(), .{});
             defer zone.deinit();
 
+            // Sort collisions by penetration depth (largest first).
+            // This ensures the most significant overlaps are resolved first.
+            // Shallower collisions (like tile seam overlaps) are then
+            // re-checked and skipped if an earlier resolution already moved the
+            // body out.
+            std.mem.sort(Collision, self.collisions_ds.items, {}, struct {
+                fn lessThan(_: void, a: Collision, b: Collision) bool {
+                    return a.mtv.lengthSq() > b.mtv.lengthSq();
+                }
+            }.lessThan);
+            std.mem.sort(Collision, self.collisions_dd.items, {}, struct {
+                fn lessThan(_: void, a: Collision, b: Collision) bool {
+                    return a.mtv.lengthSq() > b.mtv.lengthSq();
+                }
+            }.lessThan);
+
             // Resolve dynamic-static collisions first, then dynamic-dynamic collisions.
-            // This ensures proper collision resolution order without sorting.
             for (self.collisions_ds.items) |collision| {
-                try self.resolveDynamicStaticCollision(collision);
+                // Re-check overlap: a prior resolution may have already moved
+                // the dynamic body out of this collision.
+                const body_a = try self.getBody(collision.body_a);
+                const body_b = try self.getBody(collision.body_b);
+                if (body_a.intersects(body_b.*)) {
+                    try self.resolveDynamicStaticCollision(collision);
+                }
             }
             for (self.collisions_dd.items) |collision| {
-                try self.resolveDynamicDynamicCollision(collision);
+                // Same here: Make sure the bodies are still overlapping.
+                const body_a = try self.getBody(collision.body_a);
+                const body_b = try self.getBody(collision.body_b);
+                if (body_a.intersects(body_b.*)) {
+                    try self.resolveDynamicDynamicCollision(collision);
+                }
             }
         }
 
@@ -1063,6 +1089,131 @@ test "World.createBody: Should handle multiple destroy/create cycles" {
     _ = try world.getBody(body_ids[4]);
     _ = try world.getBody(new_body1);
     _ = try world.getBody(new_body2);
+}
+
+test "World.resolveCollisions: Body sliding on tile wall should not snag on tile seams" {
+    // A body slides along a horizontal floor made of adjacent tiles.
+    // Gravity pushes it slightly into the surface each frame. When it
+    // crosses a tile seam, the X overlap with the new tile can be smaller
+    // than the Y penetration, so getMtv resolves horizontally instead of
+    // vertically, killing the sliding velocity.
+    //
+    // We position the body directly at the problematic state rather than
+    // simulating multiple frames.
+
+    const tile_size: f32 = 32;
+
+    var world = TestWorld.init(std.testing.allocator, .{
+        // Gravity is not needed, since we don't run World.update and position
+        // the body directly.
+        .gravity = m.Vec2.zero(),
+    });
+    defer world.deinit();
+
+    // Two adjacent floor tiles: tile 0 at x=[0,32], tile 1 at x=[32,64].
+    _ = try world.createBody(TestWorld.Body.new(.static, .{
+        .position = m.Vec2.new(0, 200),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(tile_size, tile_size) } },
+    }));
+    _ = try world.createBody(TestWorld.Body.new(.static, .{
+        .position = m.Vec2.new(tile_size, 200),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(tile_size, tile_size) } },
+    }));
+
+    // 20x20 body at x=13, bottom edge at y=203 (3px into floor, right edge at x=33).
+    // - Tile 0: X overlap=19, Y overlap=3, resolves vertically (correct).
+    // - Tile 1: X overlap=1,  Y overlap=3, resolves horizontally (bug).
+    const body_w: f32 = 20;
+    const body_h: f32 = 20;
+    const player_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
+        .position = m.Vec2.new(13, 200 - body_h + 3), // bottom edge at y=203, right edge at x=33
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(body_w, body_h) } },
+    }));
+
+    const initial_speed: f32 = 200;
+    var player = try world.getBody(player_id);
+    player.velocity = m.Vec2.new(initial_speed, 0);
+
+    // After resolution the body should be pushed up out of the floor,
+    // not horizontally. X velocity must be preserved.
+    try world.detectCollisions();
+    try world.resolveCollisions();
+
+    player = try world.getBody(player_id);
+
+    // X velocity should be preserved, no horizontal push from tile seam.
+    if (player.velocity.x() < initial_speed * 0.99) {
+        std.debug.print(
+            "Tile seam snagging: vx={d:.4} (expected {d:.4})\n",
+            .{ player.velocity.x(), initial_speed },
+        );
+        return error.TestUnexpectedResult;
+    }
+
+    // Body should have been pushed up, not left.
+    if (player.position.y() >= 200 - body_h + 3) {
+        std.debug.print(
+            "Tile seam snagging: body not pushed up, y={d:.4}\n",
+            .{player.position.y()},
+        );
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "World.resolveCollisions: Body sliding along vertical tile wall should not snag on tile seams" {
+    // Same as above but rotated 90 degrees. A body slides down along a
+    // vertical tile wall. It penetrates 3px into the wall and straddles
+    // the seam between two stacked tiles. The tiny Y overlap with the
+    // next tile is smaller than the X penetration, so getMtv resolves
+    // vertically instead of horizontally, killing the downward velocity.
+
+    const tile_size: f32 = 32;
+
+    var world = TestWorld.init(std.testing.allocator, .{
+        .gravity = m.Vec2.zero(),
+    });
+    defer world.deinit();
+
+    // Two vertically adjacent wall tiles at x=200.
+    const wall_x: f32 = 200;
+    _ = try world.createBody(TestWorld.Body.new(.static, .{
+        .position = m.Vec2.new(wall_x, 0),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(tile_size, tile_size) } },
+    }));
+    _ = try world.createBody(TestWorld.Body.new(.static, .{
+        .position = m.Vec2.new(wall_x, tile_size),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(tile_size, tile_size) } },
+    }));
+
+    // 20x20 body, right edge 3px into wall, bottom edge 1px past tile seam.
+    // - Tile 0: X overlap=3, Y overlap=19, resolves horizontally (correct).
+    // - Tile 1: X overlap=3, Y overlap=1,  resolves vertically (bug).
+    const body_w: f32 = 20;
+    const body_h: f32 = 20;
+    const player_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
+        .position = m.Vec2.new(wall_x - body_w + 3, tile_size - body_h + 1),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(body_w, body_h) } },
+    }));
+
+    var player = try world.getBody(player_id);
+    player.velocity = m.Vec2.new(0, 200);
+
+    // After resolution the body should be pushed away from the wall,
+    // not vertically. Y velocity must be preserved.
+    try world.detectCollisions();
+    try world.resolveCollisions();
+
+    player = try world.getBody(player_id);
+
+    const initial_vy: f32 = 200;
+    // Y velocity should be preserved, no vertical push from tile seam.
+    if (player.velocity.y() < initial_vy * 0.99) {
+        std.debug.print(
+            "Vertical tile seam snagging: vy={d:.4} (expected {d:.4})\n",
+            .{ player.velocity.y(), initial_vy },
+        );
+        return error.TestUnexpectedResult;
+    }
 }
 
 test "World.destroyBody: Should remove body from spatial grid to prevent phantom collisions" {

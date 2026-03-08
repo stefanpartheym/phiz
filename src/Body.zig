@@ -1,5 +1,6 @@
 const m = @import("m");
 const Aabb = @import("./Aabb.zig");
+const Circle = @import("./Circle.zig");
 const CollisionFilter = @import("./CollisionFilter.zig");
 
 pub fn Body(comptime BodyUserData: type) type {
@@ -130,10 +131,100 @@ pub fn Body(comptime BodyUserData: type) type {
             self.position = self.position.add(self.velocity.scale(dt));
         }
 
+        /// Check if this body overlaps another body using shape-specific tests.
+        pub fn intersects(self: Self, other: Self) bool {
+            return switch (self.shape) {
+                .rectangle => switch (other.shape) {
+                    .rectangle => self.getAabb().intersects(other.getAabb()),
+                    .circle => |circ| Circle
+                        .new(other.getCenter(), circ.radius)
+                        .intersectsAabb(self.getAabb()),
+                },
+                .circle => |circ| switch (other.shape) {
+                    .rectangle => Circle
+                        .new(self.getCenter(), circ.radius)
+                        .intersectsAabb(other.getAabb()),
+                    .circle => |other_circ| Circle
+                        .new(self.getCenter(), circ.radius)
+                        .intersects(Circle.new(other.getCenter(), other_circ.radius)),
+                },
+            };
+        }
+
         /// Accumulate the deepest penetration caused by collisions on each axis.
         pub fn accumulatePenetration(self: *Self, value: m.Vec2) void {
             if (@abs(value.x()) > @abs(self.penetration.x())) self.penetration.xMut().* = value.x();
             if (@abs(value.y()) > @abs(self.penetration.y())) self.penetration.yMut().* = value.y();
         }
     };
+}
+
+//------------------------------------------------------------------------------
+// Tests
+//------------------------------------------------------------------------------
+
+const std = @import("std");
+const TestBody = Body(void);
+
+fn newRect(x: f32, y: f32, w: f32, h: f32) TestBody {
+    return TestBody.new(.dynamic, .{
+        .position = m.Vec2.new(x, y),
+        .shape = .{ .rectangle = .{ .size = m.Vec2.new(w, h) } },
+    });
+}
+
+fn newCircle(x: f32, y: f32, r: f32) TestBody {
+    return TestBody.new(.dynamic, .{
+        .position = m.Vec2.new(x, y),
+        .shape = .{ .circle = .{ .radius = r } },
+    });
+}
+
+test "Body.intersects: Overlapping rectangles" {
+    const a = newRect(0, 0, 4, 4);
+    const b = newRect(2, 2, 4, 4);
+    try std.testing.expect(a.intersects(b));
+    try std.testing.expect(b.intersects(a));
+}
+
+test "Body.intersects: Non-overlapping rectangles" {
+    const a = newRect(0, 0, 2, 2);
+    const b = newRect(5, 5, 2, 2);
+    try std.testing.expect(!a.intersects(b));
+    try std.testing.expect(!b.intersects(a));
+}
+
+test "Body.intersects: Touching rectangles do not intersect" {
+    const a = newRect(0, 0, 2, 2);
+    const b = newRect(2, 0, 2, 2);
+    try std.testing.expect(!a.intersects(b));
+    try std.testing.expect(!b.intersects(a));
+}
+
+test "Body.intersects: Overlapping circles" {
+    const a = newCircle(0, 0, 2);
+    const b = newCircle(3, 0, 2);
+    try std.testing.expect(a.intersects(b));
+    try std.testing.expect(b.intersects(a));
+}
+
+test "Body.intersects: Non-overlapping circles" {
+    const a = newCircle(0, 0, 1);
+    const b = newCircle(5, 0, 1);
+    try std.testing.expect(!a.intersects(b));
+    try std.testing.expect(!b.intersects(a));
+}
+
+test "Body.intersects: Rectangle vs circle overlap" {
+    const r = newRect(0, 0, 4, 4);
+    const c = newCircle(3, 2, 2);
+    try std.testing.expect(r.intersects(c));
+    try std.testing.expect(c.intersects(r));
+}
+
+test "Body.intersects: Rectangle vs circle no overlap" {
+    const r = newRect(0, 0, 2, 2);
+    const c = newCircle(10, 10, 1);
+    try std.testing.expect(!r.intersects(c));
+    try std.testing.expect(!c.intersects(r));
 }
