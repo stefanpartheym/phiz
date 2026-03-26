@@ -45,23 +45,23 @@ fn setup(state: *State) !void {
     const collider_size = 20;
     // Top
     _ = try state.world.createBody(Body.new(.static, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(display_size_f32.x(), collider_size) } },
+        .position = m.Vec2.new(display_size_f32.x() / 2, collider_size / 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(display_size_f32.x() / 2, collider_size / 2) } },
     }));
     // Bottom
     _ = try state.world.createBody(Body.new(.static, .{
-        .position = m.Vec2.new(0, display_size_f32.y() - collider_size),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(display_size_f32.x(), collider_size) } },
+        .position = m.Vec2.new(display_size_f32.x() / 2, display_size_f32.y() - collider_size / 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(display_size_f32.x() / 2, collider_size / 2) } },
     }));
     // Left
     _ = try state.world.createBody(Body.new(.static, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size_f32.y()) } },
+        .position = m.Vec2.new(collider_size / 2, display_size_f32.y() / 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(collider_size / 2, display_size_f32.y() / 2) } },
     }));
     // Right
     _ = try state.world.createBody(Body.new(.static, .{
-        .position = m.Vec2.new(display_size_f32.x() - collider_size, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size_f32.y()) } },
+        .position = m.Vec2.new(display_size_f32.x() - collider_size / 2, display_size_f32.y() / 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(collider_size / 2, display_size_f32.y() / 2) } },
     }));
 
     // Add pillars.
@@ -69,11 +69,11 @@ fn setup(state: *State) !void {
     const pillar_size = 50;
     const pillar_half_size = pillar_size / 2;
     const pillar_offset = 50;
-    const pillar_top_left = m.Vec2.new(display_half_size.x() - pillar_offset - pillar_half_size, display_half_size.y() - pillar_offset - pillar_half_size);
-    const pillar_top_right = m.Vec2.new(display_half_size.x() + pillar_offset - pillar_half_size, display_half_size.y() - pillar_offset - pillar_half_size);
-    const pillar_bottom_left = m.Vec2.new(display_half_size.x() - pillar_offset - pillar_half_size, display_half_size.y() + pillar_offset - pillar_half_size);
-    const pillar_bottom_right = m.Vec2.new(display_half_size.x() + pillar_offset - pillar_half_size, display_half_size.y() + pillar_offset - pillar_half_size);
-    const pillar_shape = Body.Shape{ .rectangle = .{ .size = m.Vec2.new(pillar_size, pillar_size) } };
+    const pillar_top_left = m.Vec2.new(display_half_size.x() - pillar_offset, display_half_size.y() - pillar_offset);
+    const pillar_top_right = m.Vec2.new(display_half_size.x() + pillar_offset, display_half_size.y() - pillar_offset);
+    const pillar_bottom_left = m.Vec2.new(display_half_size.x() - pillar_offset, display_half_size.y() + pillar_offset);
+    const pillar_bottom_right = m.Vec2.new(display_half_size.x() + pillar_offset, display_half_size.y() + pillar_offset);
+    const pillar_shape = Body.Shape{ .rectangle = .{ .half_size = m.Vec2.new(pillar_half_size, pillar_half_size) } };
 
     _ = try state.world.createBody(Body.new(.static, .{ .position = pillar_top_left, .shape = pillar_shape }));
     _ = try state.world.createBody(Body.new(.static, .{ .position = pillar_top_right, .shape = pillar_shape }));
@@ -118,7 +118,7 @@ fn input(state: *State) !void {
             .shape = if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift))
                 .{ .circle = .{ .radius = 12.5 } }
             else
-                .{ .rectangle = .{ .size = m.Vec2.new(25, 25) } },
+                .{ .rectangle = .{ .half_size = m.Vec2.new(12.5, 12.5) } },
             .restitution = if (rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt)) 0.5 else 0,
             .damping = 1.5,
         }));

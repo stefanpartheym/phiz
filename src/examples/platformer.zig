@@ -62,8 +62,8 @@ fn setup(state: *State) !void {
 
     // Movable body
     _ = try state.world.createBody(World.Body.new(.dynamic, .{
-        .position = m.Vec2.new(display_size_f32.x() - 100, 100),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(50, 50) } },
+        .position = m.Vec2.new(display_size_f32.x() - 75, 125),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(25, 25) } },
         .restitution = 0.8,
         .damping = 1.5,
         .collision_filter = collision_filter_statics,
@@ -71,40 +71,40 @@ fn setup(state: *State) !void {
 
     // Ground
     _ = try state.world.createBody(World.Body.new(.static, .{
-        .position = m.Vec2.new(0, display_size_f32.y() - collider_size),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(display_size_f32.x(), collider_size) } },
+        .position = m.Vec2.new(display_size_f32.x() / 2, display_size_f32.y() - collider_size / 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(display_size_f32.x() / 2, collider_size / 2) } },
         .collision_filter = collision_filter_statics,
     }));
     // Left wall
     _ = try state.world.createBody(World.Body.new(.static, .{
-        .position = m.Vec2.new(0, display_size_f32.y() / 2),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size_f32.y() / 2) } },
+        .position = m.Vec2.new(collider_size / 2, display_size_f32.y() * 3 / 4),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(collider_size / 2, display_size_f32.y() / 4) } },
         .collision_filter = collision_filter_statics,
     }));
     // Right wall
     _ = try state.world.createBody(World.Body.new(.static, .{
-        .position = m.Vec2.new(display_size_f32.x() - collider_size, display_size_f32.y() / 2),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size_f32.y() / 2) } },
+        .position = m.Vec2.new(display_size_f32.x() - collider_size / 2, display_size_f32.y() * 3 / 4),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(collider_size / 2, display_size_f32.y() / 4) } },
         .collision_filter = collision_filter_statics,
     }));
 
     // Platforms
-    const platform_shape = World.Body.Shape{ .rectangle = .{ .size = m.Vec2.new(200, collider_size / 2) } };
+    const platform_shape = World.Body.Shape{ .rectangle = .{ .half_size = m.Vec2.new(100, collider_size / 4) } };
     _ = try state.world.createBody(World.Body.new(.static, .{
-        .position = m.Vec2.new(450, 450),
+        .position = m.Vec2.new(550, 455),
         .shape = platform_shape,
         .collision_filter = collision_filter_statics,
     }));
     _ = try state.world.createBody(World.Body.new(.static, .{
-        .position = m.Vec2.new(50, 300),
+        .position = m.Vec2.new(150, 305),
         .shape = platform_shape,
         .collision_filter = collision_filter_statics,
     }));
 
     // Player
     state.player = try state.world.createBody(World.Body.new(.dynamic, .{
-        .position = m.Vec2.new(100, 175),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(25, 50) } },
+        .position = m.Vec2.new(112.5, 200),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(12.5, 25) } },
         .restitution = 0.8,
         .collision_filter = .{ .layer = CollisionLayer.PLAYER, .mask = CollisionLayer.STATIC_WORLD | CollisionLayer.COINS },
     }));
@@ -176,7 +176,7 @@ fn input(state: *State) !void {
             .shape = if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift))
                 .{ .circle = .{ .radius = 12.5 } }
             else
-                .{ .rectangle = .{ .size = m.Vec2.new(25, 25) } },
+                .{ .rectangle = .{ .half_size = m.Vec2.new(12.5, 12.5) } },
             .restitution = if (rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt)) 0.5 else 0,
             .damping = 1.5,
             .collision_filter = collision_filter,

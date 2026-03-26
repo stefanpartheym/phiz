@@ -103,9 +103,10 @@ pub fn renderBody(body: World.Body) void {
 
     switch (body.shape) {
         .rectangle => |rect| {
+            const top_left = body.position.sub(rect.half_size);
             rl.drawRectangleV(
-                rl.Vector2.init(body.position.x(), body.position.y()),
-                rl.Vector2.init(rect.size.x(), rect.size.y()),
+                rl.Vector2.init(top_left.x(), top_left.y()),
+                rl.Vector2.init(rect.half_size.x() * 2, rect.half_size.y() * 2),
                 color,
             );
         },
@@ -123,12 +124,13 @@ pub fn renderBodyDebug(body: World.Body, index: usize) void {
     // Draw shape bounds.
     switch (body.shape) {
         .rectangle => |rect| {
+            const top_left = body.position.sub(rect.half_size);
             rl.drawRectangleLinesEx(
                 rl.Rectangle.init(
-                    body.position.x(),
-                    body.position.y(),
-                    rect.size.x(),
-                    rect.size.y(),
+                    top_left.x(),
+                    top_left.y(),
+                    rect.half_size.x() * 2,
+                    rect.half_size.y() * 2,
                 ),
                 1,
                 rl.Color.red,
@@ -144,7 +146,7 @@ pub fn renderBodyDebug(body: World.Body, index: usize) void {
     }
 
     // Draw center point.
-    const body_center = body.getCenter();
+    const body_center = body.position;
     rl.drawCircleV(
         rl.Vector2.init(body_center.x(), body_center.y()),
         2,
@@ -153,7 +155,7 @@ pub fn renderBodyDebug(body: World.Body, index: usize) void {
 
     if (body.isDynamic()) {
         // Draw velocity.
-        const body_velocity = body.getCenter().add(body.velocity.scale(0.1));
+        const body_velocity = body.position.add(body.velocity.scale(0.1));
         rl.drawLineV(
             rl.Vector2.init(body_center.x(), body_center.y()),
             rl.Vector2.init(body_velocity.x(), body_velocity.y()),

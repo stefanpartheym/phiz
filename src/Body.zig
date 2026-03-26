@@ -11,7 +11,7 @@ pub fn Body(comptime BodyUserData: type) type {
         };
 
         pub const Shape = union(enum) {
-            rectangle: struct { size: m.Vec2 },
+            rectangle: struct { half_size: m.Vec2 },
             circle: struct { radius: f32 },
         };
 
@@ -80,20 +80,13 @@ pub fn Body(comptime BodyUserData: type) type {
         pub fn getAabb(self: Self) Aabb {
             return switch (self.shape) {
                 .rectangle => |rect| Aabb{
-                    .min = self.position,
-                    .max = self.position.add(rect.size),
+                    .min = self.position.sub(rect.half_size),
+                    .max = self.position.add(rect.half_size),
                 },
                 .circle => |circ| Aabb{
                     .min = self.position.sub(m.Vec2.new(circ.radius, circ.radius)),
                     .max = self.position.add(m.Vec2.new(circ.radius, circ.radius)),
                 },
-            };
-        }
-
-        pub fn getCenter(self: Self) m.Vec2 {
-            return switch (self.shape) {
-                .rectangle => |rect| self.position.add(rect.size.scale(0.5)),
-                .circle => |_| self.position,
             };
         }
 
@@ -137,16 +130,16 @@ pub fn Body(comptime BodyUserData: type) type {
                 .rectangle => switch (other.shape) {
                     .rectangle => self.getAabb().intersects(other.getAabb()),
                     .circle => |circ| Circle
-                        .new(other.getCenter(), circ.radius)
+                        .new(other.position, circ.radius)
                         .intersectsAabb(self.getAabb()),
                 },
                 .circle => |circ| switch (other.shape) {
                     .rectangle => Circle
-                        .new(self.getCenter(), circ.radius)
+                        .new(self.position, circ.radius)
                         .intersectsAabb(other.getAabb()),
                     .circle => |other_circ| Circle
-                        .new(self.getCenter(), circ.radius)
-                        .intersects(Circle.new(other.getCenter(), other_circ.radius)),
+                        .new(self.position, circ.radius)
+                        .intersects(Circle.new(other.position, other_circ.radius)),
                 },
             };
         }
@@ -166,10 +159,10 @@ pub fn Body(comptime BodyUserData: type) type {
 const std = @import("std");
 const TestBody = Body(void);
 
-fn newRect(x: f32, y: f32, w: f32, h: f32) TestBody {
+fn newRect(x: f32, y: f32, hw: f32, hh: f32) TestBody {
     return TestBody.new(.dynamic, .{
         .position = m.Vec2.new(x, y),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(w, h) } },
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(hw, hh) } },
     });
 }
 
@@ -181,22 +174,22 @@ fn newCircle(x: f32, y: f32, r: f32) TestBody {
 }
 
 test "Body.intersects: Overlapping rectangles" {
-    const a = newRect(0, 0, 4, 4);
-    const b = newRect(2, 2, 4, 4);
+    const a = newRect(2, 2, 2, 2);
+    const b = newRect(4, 4, 2, 2);
     try std.testing.expect(a.intersects(b));
     try std.testing.expect(b.intersects(a));
 }
 
 test "Body.intersects: Non-overlapping rectangles" {
-    const a = newRect(0, 0, 2, 2);
-    const b = newRect(5, 5, 2, 2);
+    const a = newRect(1, 1, 1, 1);
+    const b = newRect(6, 6, 1, 1);
     try std.testing.expect(!a.intersects(b));
     try std.testing.expect(!b.intersects(a));
 }
 
 test "Body.intersects: Touching rectangles do not intersect" {
-    const a = newRect(0, 0, 2, 2);
-    const b = newRect(2, 0, 2, 2);
+    const a = newRect(1, 1, 1, 1);
+    const b = newRect(3, 1, 1, 1);
     try std.testing.expect(!a.intersects(b));
     try std.testing.expect(!b.intersects(a));
 }
@@ -216,14 +209,14 @@ test "Body.intersects: Non-overlapping circles" {
 }
 
 test "Body.intersects: Rectangle vs circle overlap" {
-    const r = newRect(0, 0, 4, 4);
+    const r = newRect(2, 2, 2, 2);
     const c = newCircle(3, 2, 2);
     try std.testing.expect(r.intersects(c));
     try std.testing.expect(c.intersects(r));
 }
 
 test "Body.intersects: Rectangle vs circle no overlap" {
-    const r = newRect(0, 0, 2, 2);
+    const r = newRect(1, 1, 1, 1);
     const c = newCircle(10, 10, 1);
     try std.testing.expect(!r.intersects(c));
     try std.testing.expect(!c.intersects(r));

@@ -308,7 +308,7 @@ pub fn World(BodyUserData: type) type {
                             break :blk aabb_a.getMtv(aabb_b);
                         },
                         .circle => |circ_b| blk: {
-                            const circle_b = Circle.new(body_b.getCenter(), circ_b.radius);
+                            const circle_b = Circle.new(body_b.position, circ_b.radius);
                             const aabb_a = body_a.getAabb();
                             // We want the MTV to move body_a away from body_b, so we negate circle_b's MTV.
                             if (circle_b.getMtvWithAabb(aabb_a)) |mtv_result| {
@@ -319,14 +319,14 @@ pub fn World(BodyUserData: type) type {
                     },
                     .circle => |circ_a| switch (body_b.shape) {
                         .rectangle => blk: {
-                            const circle_a = Circle.new(body_a.getCenter(), circ_a.radius);
+                            const circle_a = Circle.new(body_a.position, circ_a.radius);
                             const aabb_b = body_b.getAabb();
                             // Circle.getMtvWithAabb already returns the MTV to move circle away from rectangle.
                             break :blk circle_a.getMtvWithAabb(aabb_b);
                         },
                         .circle => |circ_b| blk: {
-                            const circle_a = Circle.new(body_a.getCenter(), circ_a.radius);
-                            const circle_b = Circle.new(body_b.getCenter(), circ_b.radius);
+                            const circle_a = Circle.new(body_a.position, circ_a.radius);
+                            const circle_b = Circle.new(body_b.position, circ_b.radius);
                             break :blk circle_a.getMtv(circle_b);
                         },
                     },
@@ -512,12 +512,12 @@ test "World.detectCollisions: Should detect collision between overlapping dynami
     defer world.deinit();
 
     const body1_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
     const body2_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(1, 1),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
     const body1 = try world.getBody(body1_id);
     const body2 = try world.getBody(body2_id);
@@ -536,12 +536,12 @@ test "World.detectCollisions: Should not detect collision between non-overlappin
     defer world.deinit();
 
     const body1 = TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     });
     const body2 = TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(3, 3),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(4, 4),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     });
 
     _ = try world.createBody(body1);
@@ -557,12 +557,12 @@ test "World.detectCollisions: Should skip static vs static collisions" {
     defer world.deinit();
 
     const body1 = TestWorld.Body.new(.static, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     });
     const body2 = TestWorld.Body.new(.static, .{
-        .position = m.Vec2.new(1, 1),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     });
 
     _ = try world.createBody(body1);
@@ -578,16 +578,16 @@ test "World.detectCollisions: Should accumulate penetrations correctly (use deep
     defer world.deinit();
 
     const body1_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(2, 2) } },
     }));
     const body2_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 2),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
+        .position = m.Vec2.new(2, 4),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(2, 2) } },
     }));
     const body3_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(3, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(4, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
     const body1 = try world.getBody(body1_id);
     const body2 = try world.getBody(body2_id);
@@ -609,12 +609,12 @@ test "World.detectCollisions: Should classify collision types correctly" {
     defer world.deinit();
 
     const dynamic = TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     });
     const static = TestWorld.Body.new(.static, .{
-        .position = m.Vec2.new(1, 1),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     });
 
     _ = try world.createBody(dynamic);
@@ -654,8 +654,8 @@ test "World.detectCollisions: Should detect rectangle vs circle collision" {
     defer world.deinit();
 
     _ = try world.createBody(TestWorld.Body.new(.static, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(2, 2) } },
     }));
     _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(2, 2),
@@ -676,8 +676,8 @@ test "World.detectCollisions: Should not detect non-overlapping circle vs rectan
     defer world.deinit();
 
     _ = try world.createBody(TestWorld.Body.new(.static, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
     _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(5, 5),
@@ -717,12 +717,12 @@ test "World.detectCollisions: Should resolve dynamic vs static collision" {
     defer world.deinit();
 
     const dynamic = TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     });
     const static = TestWorld.Body.new(.static, .{
-        .position = m.Vec2.new(1, 1),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     });
 
     _ = try world.createBody(dynamic);
@@ -742,12 +742,12 @@ test "World.resolveCollisions: Should resolve dynamic vs dynamic collision" {
     defer world.deinit();
 
     const body1 = TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     });
     const body2 = TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(1, 1),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     });
 
     _ = try world.createBody(body1);
@@ -772,8 +772,8 @@ test "World.update: Should clamp velocity to terminal velocity" {
     defer world.deinit();
 
     const id = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(1, 1) } },
+        .position = m.Vec2.new(0.5, 0.5),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(0.5, 0.5) } },
     }));
     var body = try world.getBody(id);
     // Set a very high acceleration to test clamping.
@@ -818,12 +818,12 @@ test "ContactListener: Should call on_contact callback when collision occurs" {
     defer world.deinit();
 
     _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
     _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(1, 1),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
 
     try world.detectCollisions();
@@ -842,12 +842,12 @@ test "ContactListener: Should not call callback when no collision occurs" {
     defer world.deinit();
 
     _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
     _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(5, 5),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(6, 6),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
 
     try world.detectCollisions();
@@ -865,16 +865,16 @@ test "ContactListener: Should call callback multiple times for multiple collisio
 
     // Create three overlapping bodies.
     _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
-    }));
-    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
         .position = m.Vec2.new(2, 2),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(2, 2) } },
     }));
     _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(1, 1),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
+        .position = m.Vec2.new(4, 4),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(2, 2) } },
+    }));
+    _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
+        .position = m.Vec2.new(3, 3),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(2, 2) } },
     }));
 
     try world.detectCollisions();
@@ -894,12 +894,12 @@ test "ContactListener: Should disable physics when event.disable_physics is set"
     defer world.deinit();
 
     _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
     _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(1, 1),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
 
     try world.detectCollisions();
@@ -917,12 +917,12 @@ test "ContactListener: Should work with null callback" {
     defer world.deinit();
 
     _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
     _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(1, 1),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
 
     // Should not crash and should still detect collision for physics.
@@ -940,12 +940,12 @@ test "ContactListener: Should provide correct collision information in callback"
     defer world.deinit();
 
     _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
     _ = try world.createBody(TestWorld.Body.new(.static, .{
-        .position = m.Vec2.new(1, 1),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
 
     try world.detectCollisions();
@@ -962,8 +962,8 @@ test "World.destroyBody: Should invalidate BodyId after destruction" {
     defer world.deinit();
 
     const body_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
 
     // Body should be accessible initially.
@@ -982,12 +982,12 @@ test "World.destroyBody: Should reuse indices efficiently" {
 
     // Add two bodies.
     const body1_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
     const body2_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(1, 1),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
 
     try std.testing.expectEqual(0, body1_id.index);
@@ -999,8 +999,8 @@ test "World.destroyBody: Should reuse indices efficiently" {
 
     // Add a new body - should reuse index 0.
     const body3_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(2, 2),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(3, 3),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
 
     try std.testing.expectEqual(0, body3_id.index);
@@ -1027,8 +1027,8 @@ test "World.destroyBody: Should handle invalid BodyId" {
 
     // Add and destroy a body.
     const body_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(1, 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
     try world.destroyBody(body_id);
 
@@ -1053,8 +1053,8 @@ test "World.createBody: Should handle multiple destroy/create cycles" {
     // Create 5 bodies.
     for (0..5) |i| {
         body_ids[i] = try world.createBody(TestWorld.Body.new(.dynamic, .{
-            .position = m.Vec2.new(@floatFromInt(i), @floatFromInt(i)),
-            .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+            .position = m.Vec2.new(@as(f32, @floatFromInt(i)) + 1, @as(f32, @floatFromInt(i)) + 1),
+            .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
         }));
         try std.testing.expectEqual(i, body_ids[i].index);
         try std.testing.expectEqual(0, body_ids[i].generation);
@@ -1066,12 +1066,12 @@ test "World.createBody: Should handle multiple destroy/create cycles" {
 
     // Create 2 new bodies - should reuse indices 3 and 1 (in that order due to stack).
     const new_body1 = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(10, 10),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(11, 11),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
     const new_body2 = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(11, 11),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(2, 2) } },
+        .position = m.Vec2.new(12, 12),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(1, 1) } },
     }));
 
     try std.testing.expectEqual(3, new_body1.index);
@@ -1112,12 +1112,12 @@ test "World.resolveCollisions: Body sliding on tile wall should not snag on tile
 
     // Two adjacent floor tiles: tile 0 at x=[0,32], tile 1 at x=[32,64].
     _ = try world.createBody(TestWorld.Body.new(.static, .{
-        .position = m.Vec2.new(0, 200),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(tile_size, tile_size) } },
+        .position = m.Vec2.new(tile_size / 2, 200 + tile_size / 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(tile_size / 2, tile_size / 2) } },
     }));
     _ = try world.createBody(TestWorld.Body.new(.static, .{
-        .position = m.Vec2.new(tile_size, 200),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(tile_size, tile_size) } },
+        .position = m.Vec2.new(tile_size + tile_size / 2, 200 + tile_size / 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(tile_size / 2, tile_size / 2) } },
     }));
 
     // 20x20 body at x=13, bottom edge at y=203 (3px into floor, right edge at x=33).
@@ -1126,8 +1126,8 @@ test "World.resolveCollisions: Body sliding on tile wall should not snag on tile
     const body_w: f32 = 20;
     const body_h: f32 = 20;
     const player_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(13, 200 - body_h + 3), // bottom edge at y=203, right edge at x=33
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(body_w, body_h) } },
+        .position = m.Vec2.new(13 + body_w / 2, 200 - body_h / 2 + 3), // bottom edge at y=203, right edge at x=33
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(body_w / 2, body_h / 2) } },
     }));
 
     const initial_speed: f32 = 200;
@@ -1151,7 +1151,7 @@ test "World.resolveCollisions: Body sliding on tile wall should not snag on tile
     }
 
     // Body should have been pushed up, not left.
-    if (player.position.y() >= 200 - body_h + 3) {
+    if (player.position.y() >= 200 - body_h / 2 + 3) {
         std.debug.print(
             "Tile seam snagging: body not pushed up, y={d:.4}\n",
             .{player.position.y()},
@@ -1177,12 +1177,12 @@ test "World.resolveCollisions: Body sliding along vertical tile wall should not 
     // Two vertically adjacent wall tiles at x=200.
     const wall_x: f32 = 200;
     _ = try world.createBody(TestWorld.Body.new(.static, .{
-        .position = m.Vec2.new(wall_x, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(tile_size, tile_size) } },
+        .position = m.Vec2.new(wall_x + tile_size / 2, tile_size / 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(tile_size / 2, tile_size / 2) } },
     }));
     _ = try world.createBody(TestWorld.Body.new(.static, .{
-        .position = m.Vec2.new(wall_x, tile_size),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(tile_size, tile_size) } },
+        .position = m.Vec2.new(wall_x + tile_size / 2, tile_size + tile_size / 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(tile_size / 2, tile_size / 2) } },
     }));
 
     // 20x20 body, right edge 3px into wall, bottom edge 1px past tile seam.
@@ -1191,8 +1191,8 @@ test "World.resolveCollisions: Body sliding along vertical tile wall should not 
     const body_w: f32 = 20;
     const body_h: f32 = 20;
     const player_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(wall_x - body_w + 3, tile_size - body_h + 1),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(body_w, body_h) } },
+        .position = m.Vec2.new(wall_x - body_w / 2 + 3, tile_size - body_h / 2 + 1),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(body_w / 2, body_h / 2) } },
     }));
 
     var player = try world.getBody(player_id);
@@ -1222,12 +1222,12 @@ test "World.destroyBody: Should remove body from spatial grid to prevent phantom
 
     // Create two overlapping bodies.
     const body1_id = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(0, 0),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
+        .position = m.Vec2.new(2, 2),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(2, 2) } },
     }));
     _ = try world.createBody(TestWorld.Body.new(.dynamic, .{
-        .position = m.Vec2.new(2, 2),
-        .shape = .{ .rectangle = .{ .size = m.Vec2.new(4, 4) } },
+        .position = m.Vec2.new(4, 4),
+        .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(2, 2) } },
     }));
 
     // Run collision detection - should find 1 collision.

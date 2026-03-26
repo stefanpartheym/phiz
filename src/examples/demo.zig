@@ -52,28 +52,28 @@ fn setup(state: *State) !void {
     const collider_left = 250;
     const collider_right = 550;
     const circle_shape = Body.Shape{ .circle = .{ .radius = 40 } };
-    const wall_shape = Body.Shape{ .rectangle = .{ .size = m.Vec2.new(collider_size, display_size.y()) } };
-    const dynamic_shape_rect = Body.Shape{ .rectangle = .{ .size = m.Vec2.new(collider_size, collider_size) } };
+    const wall_shape = Body.Shape{ .rectangle = .{ .half_size = m.Vec2.new(collider_size / 2, display_size.y() / 2) } };
+    const dynamic_shape_rect = Body.Shape{ .rectangle = .{ .half_size = m.Vec2.new(collider_size / 2, collider_size / 2) } };
     const dynamic_shape_circ = Body.Shape{ .circle = .{ .radius = collider_size / 2 } };
 
     _ = try state.world.createBody(Body.new(
         .static,
         .{
-            .position = m.Vec2.new(0, display_size.y() - collider_size),
-            .shape = .{ .rectangle = .{ .size = m.Vec2.new(display_size.x(), collider_size) } },
+            .position = m.Vec2.new(display_size.x() / 2, display_size.y() - collider_size / 2),
+            .shape = .{ .rectangle = .{ .half_size = m.Vec2.new(display_size.x() / 2, collider_size / 2) } },
         },
     ));
     _ = try state.world.createBody(Body.new(
         .static,
         .{
-            .position = m.Vec2.new(0, 0),
+            .position = m.Vec2.new(collider_size / 2, display_size.y() / 2),
             .shape = wall_shape,
         },
     ));
     _ = try state.world.createBody(Body.new(
         .static,
         .{
-            .position = m.Vec2.new(display_size.x() - collider_size, 0),
+            .position = m.Vec2.new(display_size.x() - collider_size / 2, display_size.y() / 2),
             .shape = wall_shape,
         },
     ));
@@ -92,14 +92,13 @@ fn setup(state: *State) !void {
 fn spawnDynamicBodies(state: *State, count: usize, shape: Body.Shape, offset: m.Vec2) !void {
     const size = switch (shape) {
         .circle => |circ| circ.radius / 2,
-        .rectangle => |rect| rect.size.x(),
+        .rectangle => |rect| rect.half_size.x() * 2,
     };
-    const shape_offset = if (shape == .rectangle) size / 2 else 0;
     for (0..count) |i| {
         const i_f32: f32 = @floatFromInt(i);
         const sign: f32 = if (i % 2 == 0) -1 else 1;
         _ = try state.world.createBody(Body.new(.dynamic, .{
-            .position = m.Vec2.new(offset.x() - shape_offset + sign * size, offset.y() - i_f32 * size * 2),
+            .position = m.Vec2.new(offset.x() + sign * size, offset.y() - i_f32 * size * 2),
             .shape = shape,
             .restitution = 0.8,
             .damping = 0.5,
@@ -141,7 +140,7 @@ fn input(state: *State) !void {
             .shape = if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift))
                 .{ .circle = .{ .radius = 12.5 } }
             else
-                .{ .rectangle = .{ .size = m.Vec2.new(25, 25) } },
+                .{ .rectangle = .{ .half_size = m.Vec2.new(12.5, 12.5) } },
             .restitution = if (rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt)) 0.5 else 0,
             .damping = 1.5,
         }));
