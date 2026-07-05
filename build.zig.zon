@@ -33,8 +33,8 @@
     // internet connectivity.
     .dependencies = .{
         .zalgebra = .{
-            .url = "git+https://github.com/kooparse/zalgebra.git#e3c6792c938b01015e6358e335ed2ba4527736e9",
-            .hash = "zalgebra-0.0.0-aaiVSkRuAQBKWSVhmr3kxk6Y3EjLOKGk65osMLNYi02d",
+            .url = "git+https://github.com/kooparse/zalgebra.git#a054c778092396b2e714753c56e6114a0826b409",
+            .hash = "zalgebra-0.0.0-aaiVSkF4AQALCVQT0zGV7reBLMtG1tpXlqrDXfnQ0hn_",
         },
         .raylib_zig = .{
             .url = "git+https://github.com/raylib-zig/raylib-zig#178530d5f5e654d9eb1d7a79e3fbfbd931e26163",
