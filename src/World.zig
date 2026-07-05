@@ -383,6 +383,21 @@ pub fn World(BodyUserData: type) type {
             // Shallower collisions (like tile seam overlaps) are then
             // re-checked and skipped if an earlier resolution already moved the
             // body out.
+            //
+            // PERF: This is the dominant self-time in `resolveCollisions`
+            // (the biggest ReleaseFast hotspot in profiling). It sorts full
+            // `Collision` values (~40 bytes each) by value, twice per substep,
+            // so every swap copies the whole struct and re-reads `mtv` to
+            // recompute `lengthSq()` on each comparison. Ways to improve:
+            //   1. Sort a small side array of `{ key: f32 = mtv.lengthSq(),
+            //      idx: u32 }` (or just indices) so swaps move 4-8 bytes instead
+            //      of whole structs, and the penetration key is computed once
+            //      per collision instead of O(n log n) times.
+            //   2. Skip the sort entirely for tiny lists and/or use insertion
+            //      sort for small N (std.mem.sort has fixed overhead that
+            //      dominates when there are only a handful of collisions).
+            //   3. Reconsider whether both lists need a full ordering, or only
+            //      a partial one for the tile-seam recheck below.
             std.mem.sort(Collision, self.collisions_ds.items, {}, struct {
                 fn lessThan(_: void, a: Collision, b: Collision) bool {
                     return a.mtv.lengthSq() > b.mtv.lengthSq();

@@ -30,9 +30,9 @@ const STEPS: usize = 600;
 /// Dynamic bodies per spawn group (4 groups).
 const BODIES_PER_GROUP: usize = 120;
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
+    const io = init.io;
 
     var world = World.init(allocator, .{ .spatial_grid_cell_size = 40 });
     defer world.deinit();
@@ -43,15 +43,15 @@ pub fn main() !void {
     const timings = try allocator.alloc(u64, STEPS);
     defer allocator.free(timings);
 
-    const start = std.time.nanoTimestamp();
+    const start = std.Io.Timestamp.now(io, .awake);
     for (0..STEPS) |i| {
-        const step_start = std.time.nanoTimestamp();
+        const step_start = std.Io.Timestamp.now(io, .awake);
         try world.update(PHYSICS_TIMESTEP, PHYSICS_SUBSTEPS);
-        const step_end = std.time.nanoTimestamp();
-        timings[i] = @intCast(step_end - step_start);
+        const step_end = std.Io.Timestamp.now(io, .awake);
+        timings[i] = @intCast(step_end.nanoseconds - step_start.nanoseconds);
         tracy.FrameMark();
     }
-    const total: u64 = @intCast(std.time.nanoTimestamp() - start);
+    const total: u64 = @intCast(std.Io.Timestamp.now(io, .awake).nanoseconds - start.nanoseconds);
 
     report(world.bodies.items.len, total, timings);
 }

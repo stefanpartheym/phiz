@@ -15,17 +15,13 @@ const TARGET_FPS = 60;
 const PHYSICS_TIMESTEP: f32 = 1.0 / 60.0;
 const PHYSICS_SUBSTEPS = 4;
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
+pub fn main(init: std.process.Init) !void {
     rl.setTargetFPS(TARGET_FPS);
     rl.setConfigFlags(.{ .window_highdpi = true });
     rl.initWindow(DISPLAY_SIZE.x(), DISPLAY_SIZE.y(), "phiz example: demo");
     defer rl.closeWindow();
 
-    var state = State.init(allocator, .{
+    var state = State.init(init.gpa, .{
         .debugger_config = .{
             .physics_timeout = 10,
             .frame_stepping_enabled = true,

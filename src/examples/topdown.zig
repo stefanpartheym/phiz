@@ -15,17 +15,13 @@ const DIAGONAL_FACTOR: f32 = 1.0 / @sqrt(@as(f32, 2));
 const PLAYER_SPEED = 1000;
 const PLAYER_DAMPING = 5;
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
+pub fn main(init: std.process.Init) !void {
     rl.setTargetFPS(TARGET_FPS);
     rl.setConfigFlags(.{ .window_highdpi = true });
     rl.initWindow(DISPLAY_SIZE.x(), DISPLAY_SIZE.y(), "phiz example: top-down");
     defer rl.closeWindow();
 
-    var state = State.init(allocator, .{ .physics_config = .{ .gravity = m.Vec2.zero() } });
+    var state = State.init(init.gpa, .{ .physics_config = .{ .gravity = m.Vec2.zero() } });
     defer state.deinit();
     try setup(&state);
 
