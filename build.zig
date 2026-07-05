@@ -106,6 +106,32 @@ pub fn build(b: *std.Build) void {
     example_demo.add(b, "demo");
 
     //
+    // Headless performance harness (no raylib) -> `zig build run-perf`
+    //
+    const perf_mod = b.createModule(.{
+        .root_source_file = b.path("src/examples/perf.zig"),
+        .target = target,
+        .optimize = optimize,
+        // Tracy's client library is C/C++.
+        .link_libc = true,
+    });
+    perf_mod.addImport("phiz", mod);
+    perf_mod.addImport("tracy", ztracy_mod);
+    perf_mod.linkLibrary(ztracy_lib);
+
+    const perf_exe = b.addExecutable(.{
+        .name = "perf",
+        .root_module = perf_mod,
+        .use_llvm = true,
+    });
+    b.installArtifact(perf_exe);
+
+    const run_perf_cmd = b.addRunArtifact(perf_exe);
+    if (b.args) |args| run_perf_cmd.addArgs(args);
+    const run_perf_step = b.step("run-perf", "Run the headless performance harness");
+    run_perf_step.dependOn(&run_perf_cmd.step);
+
+    //
     // Unit tests
     //
 
