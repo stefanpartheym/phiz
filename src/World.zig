@@ -7,7 +7,7 @@ const Collision = @import("./Collision.zig");
 const CollisionEvent = @import("./CollisionEvent.zig");
 const CollisionFilter = @import("./CollisionFilter.zig");
 const SpatialHashGrid = @import("./SpatialHashGrid.zig");
-const tracy = @import("tracy");
+const ztracy = @import("ztracy");
 
 pub fn World(BodyUserData: type) type {
     return struct {
@@ -84,17 +84,17 @@ pub fn World(BodyUserData: type) type {
                 .allocator = allocator,
                 .gravity = config.gravity,
                 .terminal_velocity = config.terminal_velocity,
-                .bodies = std.ArrayList(Body){},
-                .body_generations = std.ArrayList(BodyId.GenerationType){},
-                .body_active = std.ArrayList(bool){},
-                .free_body_ids = std.ArrayList(BodyId.IndexType){},
-                .destroy_body_ids = std.ArrayList(BodyId){},
+                .bodies = .empty,
+                .body_generations = .empty,
+                .body_active = .empty,
+                .free_body_ids = .empty,
+                .destroy_body_ids = .empty,
                 .next_generation = 0,
-                .collisions_ds = std.ArrayList(Collision){},
-                .collisions_dd = std.ArrayList(Collision){},
+                .collisions_ds = .empty,
+                .collisions_dd = .empty,
                 .spatial_grid = SpatialHashGrid.init(allocator, config.spatial_grid_cell_size),
                 .contact_listener = config.contact_listener,
-                .collision_events = std.ArrayList(CollisionEvent){},
+                .collision_events = .empty,
             };
         }
 
@@ -124,12 +124,12 @@ pub fn World(BodyUserData: type) type {
         }
 
         pub fn update(self: *Self, timestep: f32, substeps: usize) !void {
-            const zone = tracy.initZone(@src(), .{});
-            defer zone.deinit();
+            const zone = ztracy.ZoneN(@src(), "update");
+            defer zone.End();
 
             const substep = timestep / @as(f32, @floatFromInt(substeps));
 
-            const zone_apply_forces = tracy.initZone(@src(), .{ .name = "update:apply_forces" });
+            const zone_apply_forces = ztracy.ZoneN(@src(), "update:apply_forces");
             // Apply forces.
             for (self.bodies.items, 0..) |*body, i| {
                 if (!self.isBodyActive(i)) continue;
@@ -141,7 +141,7 @@ pub fn World(BodyUserData: type) type {
                 body.accelerate(timestep);
                 body.applyDamping(timestep);
             }
-            zone_apply_forces.deinit();
+            zone_apply_forces.End();
 
             // Integration and collision detection.
             for (0..substeps) |_| {
@@ -177,7 +177,7 @@ pub fn World(BodyUserData: type) type {
                 }
             }
 
-            const zone_reset = tracy.initZone(@src(), .{ .name = "update:reset" });
+            const zone_reset = ztracy.ZoneN(@src(), "update:reset");
             // Reset accelerations and clamp velocities.
             for (self.bodies.items, 0..) |*body, i| {
                 if (!self.isBodyActive(i)) continue;
@@ -186,7 +186,7 @@ pub fn World(BodyUserData: type) type {
                     body.velocity = body.velocity.norm().scale(self.terminal_velocity);
                 }
             }
-            zone_reset.deinit();
+            zone_reset.End();
         }
 
         pub inline fn validateBodyId(self: *const Self, id: BodyId) BodyAccessError!void {
@@ -250,8 +250,8 @@ pub fn World(BodyUserData: type) type {
         }
 
         fn detectCollisions(self: *Self) !void {
-            const zone = tracy.initZone(@src(), .{});
-            defer zone.deinit();
+            const zone = ztracy.Zone(@src());
+            defer zone.End();
 
             // Clear previous collisions
             self.collisions_ds.clearRetainingCapacity();
@@ -263,10 +263,10 @@ pub fn World(BodyUserData: type) type {
         }
 
         fn detectCollisionsBroadPhase(self: *Self) ![]const SpatialHashGrid.BodyPair {
-            const zone = tracy.initZone(@src(), .{});
-            defer zone.deinit();
+            const zone = ztracy.Zone(@src());
+            defer zone.End();
 
-            const zone_spatial_grid = tracy.initZone(@src(), .{ .name = "detectCollisionsBroadPhase:update" });
+            const zone_spatial_grid = ztracy.ZoneN(@src(), "detectCollisionsBroadPhase:update");
             // Initialize tracking for current body count.
             try self.spatial_grid.initIncrementalTracking(self.bodies.items.len);
 
@@ -276,7 +276,7 @@ pub fn World(BodyUserData: type) type {
                 const aabb = body.getAabb();
                 try self.spatial_grid.updateBody(BodyId.new(i, self.body_generations.items[i]), aabb);
             }
-            zone_spatial_grid.deinit();
+            zone_spatial_grid.End();
 
             // Get potential collision pairs from the spatial grid
             const pairs = try self.spatial_grid.getPairs();
@@ -285,8 +285,8 @@ pub fn World(BodyUserData: type) type {
         }
 
         fn detectCollisionsNarrowPhase(self: *Self, pairs: []const SpatialHashGrid.BodyPair) !void {
-            const zone = tracy.initZone(@src(), .{});
-            defer zone.deinit();
+            const zone = ztracy.Zone(@src());
+            defer zone.End();
 
             for (pairs) |pair| {
                 const body_a = &self.bodies.items[pair.a.index];
@@ -375,8 +375,8 @@ pub fn World(BodyUserData: type) type {
         }
 
         fn resolveCollisions(self: *Self) !void {
-            const zone = tracy.initZone(@src(), .{});
-            defer zone.deinit();
+            const zone = ztracy.Zone(@src());
+            defer zone.End();
 
             // Sort collisions by penetration depth (largest first).
             // This ensures the most significant overlaps are resolved first.
@@ -415,8 +415,8 @@ pub fn World(BodyUserData: type) type {
         }
 
         fn resolveDynamicStaticCollision(self: *Self, collision: Collision) !void {
-            const zone = tracy.initZone(@src(), .{});
-            defer zone.deinit();
+            const zone = ztracy.Zone(@src());
+            defer zone.End();
 
             const body_a = try self.getBody(collision.body_a);
             const body_b = try self.getBody(collision.body_b);
@@ -438,8 +438,8 @@ pub fn World(BodyUserData: type) type {
         }
 
         fn resolveDynamicDynamicCollision(self: *Self, collision: Collision) !void {
-            const zone = tracy.initZone(@src(), .{});
-            defer zone.deinit();
+            const zone = ztracy.Zone(@src());
+            defer zone.End();
 
             const body_a = try self.getBody(collision.body_a);
             const body_b = try self.getBody(collision.body_b);

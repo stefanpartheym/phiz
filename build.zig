@@ -20,13 +20,13 @@ pub fn build(b: *std.Build) void {
     //
 
     // Tracy: Profiler
-    const tracy_dep = b.dependency("zig_tracy", .{
+    const ztracy_dep = b.dependency("ztracy", .{
         .target = target,
         .optimize = optimize,
-        .tracy_enable = tracy_options.tracy_enable,
+        .enable_ztracy = tracy_options.tracy_enable,
     });
-    const tracy_mod = tracy_dep.module("tracy");
-    const tracy_lib = tracy_dep.artifact("tracy");
+    const tracy_mod = ztracy_dep.module("root");
+    const tracy_lib = ztracy_dep.artifact("tracy");
 
     // Zalgebra: Linear algebra library for games and real-time graphics
     const zalgebra_dep = b.dependency("zalgebra", options);
@@ -63,7 +63,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
     });
     mod.addImport("m", math_mod);
-    mod.addImport("tracy", tracy_mod);
+    mod.addImport("ztracy", tracy_mod);
 
     //
     // Examples
@@ -115,9 +115,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     test_mod.addImport("m", math_mod);
-    test_mod.addImport("tracy", tracy_mod);
+    test_mod.addImport("ztracy", tracy_mod);
 
     const mod_tests = b.addTest(.{ .root_module = test_mod });
+    // Match the examples: the LLVM backend is currently the only combination
+    // that both links against GCC 16's crt1.o and doesn't crash the compiler.
+    mod_tests.use_llvm = true;
     const run_mod_tests = b.addRunArtifact(mod_tests);
     const install_mod_tests = b.addInstallArtifact(
         mod_tests,
@@ -151,13 +154,18 @@ const Example = struct {
         exe_mod.addImport("phiz", self.main_mod);
         exe_mod.addImport("raylib", self.raylib_mod);
         exe_mod.linkLibrary(self.raylib_lib);
-        exe_mod.addImport("tracy", self.tracy_mod);
+        exe_mod.addImport("ztracy", self.tracy_mod);
         exe_mod.linkLibrary(self.tracy_lib);
 
         const exe = b.addExecutable(.{
             .name = "example-" ++ name,
             .root_module = exe_mod,
-            // Use LLVM to be able to debug with LLDB.
+            // Use the LLVM backend (which links via LLD). On this toolchain
+            // (Zig 0.16.0 + GCC 16) it is currently the only working combo:
+            //   - self-hosted backend + self-hosted linker fails to relocate
+            //     the `.sframe` section in GCC 16's crt1.o;
+            //   - self-hosted backend + LLD crashes the compiler (SIGSEGV).
+            // It also gives the best LLDB debugging experience.
             .use_llvm = true,
         });
         b.installArtifact(exe);

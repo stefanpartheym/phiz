@@ -1,5 +1,5 @@
 const std = @import("std");
-const tracy = @import("tracy");
+const ztracy = @import("ztracy");
 const m = @import("m");
 const Aabb = @import("./Aabb.zig");
 const BodyId = @import("./BodyId.zig");
@@ -162,11 +162,11 @@ pub fn init(allocator: std.mem.Allocator, cell_size: f32) Self {
         .cell_size = cell_size,
         .cells = CellHashMap.init(allocator),
         .allocator = allocator,
-        .pairs = std.ArrayList(BodyPair){},
+        .pairs = .empty,
         .processed_pairs = FastPairSet.init(allocator),
-        .non_empty_cells = std.ArrayList(*std.ArrayList(BodyId)){},
-        .body_positions = std.ArrayList(m.Vec2){},
-        .body_cells = std.ArrayList(std.ArrayList(GridCoord)){},
+        .non_empty_cells = .empty,
+        .body_positions = .empty,
+        .body_cells = .empty,
     };
 }
 
@@ -209,7 +209,7 @@ pub fn insert(self: *Self, body_id: BodyId, aabb: Aabb) !void {
             const coord = GridCoord{ .x = x, .y = y };
             const result = try self.cells.getOrPut(coord);
             if (!result.found_existing) {
-                result.value_ptr.* = std.ArrayList(BodyId){};
+                result.value_ptr.* = .empty;
             }
             try result.value_ptr.append(self.allocator, body_id);
         }
@@ -218,8 +218,8 @@ pub fn insert(self: *Self, body_id: BodyId, aabb: Aabb) !void {
 
 /// Initialize incremental tracking for a body count.
 pub fn initIncrementalTracking(self: *Self, body_count: usize) !void {
-    const zone = tracy.initZone(@src(), .{});
-    defer zone.deinit();
+    const zone = ztracy.Zone(@src());
+    defer zone.End();
 
     // Only grow, never shrink to avoid invalidating existing data
     if (body_count <= self.body_positions.items.len) return;
@@ -230,7 +230,7 @@ pub fn initIncrementalTracking(self: *Self, body_count: usize) !void {
 
     // Initialize only new cell lists
     for (self.body_cells.items[old_len..]) |*cell_list| {
-        cell_list.* = std.ArrayList(GridCoord){};
+        cell_list.* = .empty;
     }
 
     // Initialize only new positions to invalid values to force initial update
@@ -279,7 +279,7 @@ fn insertBodyIntoCells(self: *Self, body_id: BodyId, aabb: Aabb) !void {
             // Add body to the cell
             const result = try self.cells.getOrPut(coord);
             if (!result.found_existing) {
-                result.value_ptr.* = std.ArrayList(BodyId){};
+                result.value_ptr.* = .empty;
             }
             try result.value_ptr.append(self.allocator, body_id);
         }
@@ -329,8 +329,8 @@ pub fn updateBody(self: *Self, body_id: BodyId, aabb: Aabb) !void {
 
 /// Returns a list of potentially colliding body pairs.
 pub fn getPairs(self: *Self) ![]const BodyPair {
-    const zone = tracy.initZone(@src(), .{});
-    defer zone.deinit();
+    const zone = ztracy.Zone(@src());
+    defer zone.End();
 
     self.pairs.clearRetainingCapacity();
     self.processed_pairs.clearRetainingCapacity();

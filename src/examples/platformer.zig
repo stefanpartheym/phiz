@@ -23,17 +23,13 @@ const CollisionLayer = struct {
 
 var coins_collected: usize = 0;
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
+pub fn main(init: std.process.Init) !void {
     rl.setTargetFPS(TARGET_FPS);
     rl.setConfigFlags(.{ .window_highdpi = true });
     rl.initWindow(DISPLAY_SIZE.x(), DISPLAY_SIZE.y(), "phiz example: platformer");
     defer rl.closeWindow();
 
-    var state = State.init(allocator, .{
+    var state = State.init(init.gpa, .{
         .physics_config = .{
             .contact_listener = .{ .on_contact = collisionCallback },
         },
