@@ -1,5 +1,5 @@
 const std = @import("std");
-const tracy = @import("tracy");
+const ztracy = @import("ztracy");
 const m = @import("m");
 const Aabb = @import("./Aabb.zig");
 const BodyId = @import("./BodyId.zig");
@@ -218,8 +218,8 @@ pub fn insert(self: *Self, body_id: BodyId, aabb: Aabb) !void {
 
 /// Initialize incremental tracking for a body count.
 pub fn initIncrementalTracking(self: *Self, body_count: usize) !void {
-    const zone = tracy.initZone(@src(), .{});
-    defer zone.deinit();
+    const zone = ztracy.ZoneN(@src(), "SpatialHashGrid.initIncrementalTracking");
+    defer zone.End();
 
     // Only grow, never shrink to avoid invalidating existing data
     if (body_count <= self.body_positions.items.len) return;
@@ -329,8 +329,8 @@ pub fn updateBody(self: *Self, body_id: BodyId, aabb: Aabb) !void {
 
 /// Returns a list of potentially colliding body pairs.
 pub fn getPairs(self: *Self) ![]const BodyPair {
-    const zone = tracy.initZone(@src(), .{});
-    defer zone.deinit();
+    const zone = ztracy.ZoneN(@src(), "SpatialHashGrid.getPairs");
+    defer zone.End();
 
     self.pairs.clearRetainingCapacity();
     self.processed_pairs.clearRetainingCapacity();

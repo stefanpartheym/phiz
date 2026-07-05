@@ -40,9 +40,9 @@
             .url = "git+https://github.com/raylib-zig/raylib-zig#178530d5f5e654d9eb1d7a79e3fbfbd931e26163",
             .hash = "raylib_zig-5.6.0-dev-KE8REKo6BQDt6jBeo3ODV5g9kzo2IRfJARkaN0kXtC2T",
         },
-        .zig_tracy = .{
-            .url = "git+https://github.com/cipharius/zig-tracy.git#22f290947ca272a4aea2a7e5b00ec29fb0c1a8d6",
-            .hash = "zig_tracy-0.0.5-aOIqsYFsAAB11_thqyvA3Gq_7vCruca5bAuTWgySlBEz",
+        .ztracy = .{
+            .url = "git+https://github.com/zig-gamedev/ztracy.git#d95d2a193b9f97944a17026c9a42b5d0f9a88c94",
+            .hash = "ztracy-0.14.0-dev-zHJSqzUHGQAmhJybhlwtl1QKevUBw4M5YKZqPfWx2y99",
         },
     },
     .paths = .{

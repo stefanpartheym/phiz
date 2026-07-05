@@ -20,13 +20,13 @@ pub fn build(b: *std.Build) void {
     //
 
     // Tracy: Profiler
-    const tracy_dep = b.dependency("zig_tracy", .{
+    const ztracy_dep = b.dependency("ztracy", .{
         .target = target,
         .optimize = optimize,
-        .tracy_enable = tracy_options.tracy_enable,
+        .enable_ztracy = tracy_options.tracy_enable,
     });
-    const tracy_mod = tracy_dep.module("tracy");
-    const tracy_lib = tracy_dep.artifact("tracy");
+    const ztracy_mod = ztracy_dep.module("root");
+    const ztracy_lib = ztracy_dep.artifact("tracy");
 
     // Zalgebra: Linear algebra library for games and real-time graphics
     const zalgebra_dep = b.dependency("zalgebra", options);
@@ -63,7 +63,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
     });
     mod.addImport("m", math_mod);
-    mod.addImport("tracy", tracy_mod);
+    mod.addImport("ztracy", ztracy_mod);
 
     //
     // Examples
@@ -75,8 +75,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .raylib_mod = raylib_mod,
         .raylib_lib = raylib_lib,
-        .tracy_mod = tracy_mod,
-        .tracy_lib = tracy_lib,
+        .ztracy_mod = ztracy_mod,
+        .ztracy_lib = ztracy_lib,
         .main_mod = mod,
     };
     example_platformer.add(b, "platformer");
@@ -87,8 +87,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .raylib_mod = raylib_mod,
         .raylib_lib = raylib_lib,
-        .tracy_mod = tracy_mod,
-        .tracy_lib = tracy_lib,
+        .ztracy_mod = ztracy_mod,
+        .ztracy_lib = ztracy_lib,
         .main_mod = mod,
     };
     example_topdown.add(b, "topdown");
@@ -99,8 +99,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .raylib_mod = raylib_mod,
         .raylib_lib = raylib_lib,
-        .tracy_mod = tracy_mod,
-        .tracy_lib = tracy_lib,
+        .ztracy_mod = ztracy_mod,
+        .ztracy_lib = ztracy_lib,
         .main_mod = mod,
     };
     example_demo.add(b, "demo");
@@ -115,7 +115,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     test_mod.addImport("m", math_mod);
-    test_mod.addImport("tracy", tracy_mod);
+    test_mod.addImport("ztracy", ztracy_mod);
 
     const mod_tests = b.addTest(.{ .root_module = test_mod });
     const run_mod_tests = b.addRunArtifact(mod_tests);
@@ -136,8 +136,8 @@ const Example = struct {
     optimize: std.builtin.OptimizeMode,
     raylib_mod: *std.Build.Module,
     raylib_lib: *std.Build.Step.Compile,
-    tracy_mod: *std.Build.Module,
-    tracy_lib: *std.Build.Step.Compile,
+    ztracy_mod: *std.Build.Module,
+    ztracy_lib: *std.Build.Step.Compile,
     main_mod: *std.Build.Module,
 
     pub fn add(self: @This(), b: *std.Build, comptime name: []const u8) void {
@@ -151,8 +151,8 @@ const Example = struct {
         exe_mod.addImport("phiz", self.main_mod);
         exe_mod.addImport("raylib", self.raylib_mod);
         exe_mod.linkLibrary(self.raylib_lib);
-        exe_mod.addImport("tracy", self.tracy_mod);
-        exe_mod.linkLibrary(self.tracy_lib);
+        exe_mod.addImport("tracy", self.ztracy_mod);
+        exe_mod.linkLibrary(self.ztracy_lib);
 
         const exe = b.addExecutable(.{
             .name = "example-" ++ name,
