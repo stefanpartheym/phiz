@@ -25,7 +25,7 @@
     .fingerprint = 0x850add49228b71b, // Changing this has security and trust implications.
     // Tracks the earliest Zig version that the package considers to be a
     // supported use case.
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     // This field is optional.
     // Each dependency must either provide a `url` and `hash`, or a `path`.
     // `zig build --fetch` can be used to fetch all dependencies of a package, recursively.
@@ -33,16 +33,17 @@
     // internet connectivity.
     .dependencies = .{
         .zalgebra = .{
-            .url = "git+https://github.com/kooparse/zalgebra.git#a054c778092396b2e714753c56e6114a0826b409",
-            .hash = "zalgebra-0.0.0-aaiVSkF4AQALCVQT0zGV7reBLMtG1tpXlqrDXfnQ0hn_",
+            .url = "git+https://github.com/kooparse/zalgebra.git#b5ebfef29a76fffdf1bc5424ac4c9f49fe323df2",
+            .hash = "zalgebra-0.0.0-aaiVSn6AAQB8nPn_r_w4B679hFolc1a8IjNvSjpQMVzC",
         },
         .raylib_zig = .{
-            .url = "git+https://github.com/raylib-zig/raylib-zig.git#97be2c7ae646a2f09856604b138c427c0af1b952",
-            .hash = "raylib_zig-6.0.0-KE8REDJ4BQBu7lKwYNt6R4j5ywPeS37zqW6zrtjCcRwH",
+            .url = "git+https://github.com/raylib-zig/raylib-zig.git#28bbe30112f605da918db00eff53a75ce1aa9180",
+            .hash = "raylib_zig-6.2.0-KE8RELGmBQDX1v1DqBN57pNxJ-b-MIa1S-M7NXT9Eplr",
+            .lazy = true,
         },
         .ztracy = .{
-            .url = "git+https://github.com/zig-gamedev/ztracy.git#d95d2a193b9f97944a17026c9a42b5d0f9a88c94",
-            .hash = "ztracy-0.14.0-dev-zHJSqzUHGQAmhJybhlwtl1QKevUBw4M5YKZqPfWx2y99",
+            .url = "git+https://github.com/cyberegoorg/ztracy.git#36c966b6caab19b6a7dc94c5834ce9e6970bc7e2",
+            .hash = "ztracy-0.14.0-dev-zHJSq3n6GwBjMdQuQmeDxCTjlUoJPg7SFUwZBSr3sXa8",
         },
     },
     .paths = .{

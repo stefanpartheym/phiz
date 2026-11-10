@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const options = .{
@@ -32,16 +32,6 @@ pub fn build(b: *std.Build) void {
     const zalgebra_dep = b.dependency("zalgebra", options);
     const zalgebra_mod = zalgebra_dep.module("zalgebra");
 
-    // Raylib: Graphics library
-    // This is only used for the examples.
-    const raylib_dep = b.dependency("raylib_zig", .{
-        .target = target,
-        .optimize = optimize,
-        .linux_display_backend = .X11,
-    });
-    const raylib_mod = raylib_dep.module("raylib");
-    const raylib_lib = raylib_dep.artifact("raylib");
-
     //
     // Modules
     //
@@ -66,46 +56,6 @@ pub fn build(b: *std.Build) void {
     mod.addImport("ztracy", ztracy_mod);
 
     //
-    // Examples
-    //
-
-    const example_platformer = Example{
-        .source = "src/examples/platformer.zig",
-        .target = target,
-        .optimize = optimize,
-        .raylib_mod = raylib_mod,
-        .raylib_lib = raylib_lib,
-        .ztracy_mod = ztracy_mod,
-        .ztracy_lib = ztracy_lib,
-        .main_mod = mod,
-    };
-    example_platformer.add(b, "platformer");
-
-    const example_topdown = Example{
-        .source = "src/examples/topdown.zig",
-        .target = target,
-        .optimize = optimize,
-        .raylib_mod = raylib_mod,
-        .raylib_lib = raylib_lib,
-        .ztracy_mod = ztracy_mod,
-        .ztracy_lib = ztracy_lib,
-        .main_mod = mod,
-    };
-    example_topdown.add(b, "topdown");
-
-    const example_demo = Example{
-        .source = "src/examples/demo.zig",
-        .target = target,
-        .optimize = optimize,
-        .raylib_mod = raylib_mod,
-        .raylib_lib = raylib_lib,
-        .ztracy_mod = ztracy_mod,
-        .ztracy_lib = ztracy_lib,
-        .main_mod = mod,
-    };
-    example_demo.add(b, "demo");
-
-    //
     // Headless performance harness (no raylib) -> `zig build run-perf`
     //
     const perf_mod = b.createModule(.{
@@ -127,7 +77,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(perf_exe);
 
     const run_perf_cmd = b.addRunArtifact(perf_exe);
-    if (b.args) |args| run_perf_cmd.addArgs(args);
+    run_perf_cmd.addPassthruArgs();
     const run_perf_step = b.step("run-perf", "Run the headless performance harness");
     run_perf_step.dependOn(&run_perf_cmd.step);
 
@@ -154,6 +104,33 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     const install_test_step = b.step("install-test", "Install unit tests");
     install_test_step.dependOn(&install_mod_tests.step);
+
+    //
+    // Examples
+    //
+
+    // Raylib is only used for the examples, so consumers of phiz never fetch
+    // or configure it.
+    if (b.isRoot()) {
+        const raylib_dep = try b.dependencyLazy("raylib_zig", .{
+            .target = target,
+            .optimize = optimize,
+            .linux_display_backend = .X11,
+        });
+        inline for (.{ "platformer", "topdown", "demo" }) |name| {
+            const example = Example{
+                .source = "src/examples/" ++ name ++ ".zig",
+                .target = target,
+                .optimize = optimize,
+                .raylib_mod = raylib_dep.module("raylib"),
+                .raylib_lib = raylib_dep.artifact("raylib"),
+                .ztracy_mod = ztracy_mod,
+                .ztracy_lib = ztracy_lib,
+                .main_mod = mod,
+            };
+            example.add(b, name);
+        }
+    }
 }
 
 const Example = struct {
@@ -192,8 +169,6 @@ const Example = struct {
         const run_step = b.step("run-" ++ name, "Run the " ++ name ++ " example");
         run_step.dependOn(&run_cmd.step);
         run_cmd.step.dependOn(b.getInstallStep());
-        if (b.args) |args| {
-            run_cmd.addArgs(args);
-        }
+        run_cmd.addPassthruArgs();
     }
 };

@@ -209,7 +209,7 @@ pub fn insert(self: *Self, body_id: BodyId, aabb: Aabb) !void {
             const coord = GridCoord{ .x = x, .y = y };
             const result = try self.cells.getOrPut(coord);
             if (!result.found_existing) {
-                result.value_ptr.* = std.ArrayList(BodyId){};
+                result.value_ptr.* = .empty;
             }
             try result.value_ptr.append(self.allocator, body_id);
         }

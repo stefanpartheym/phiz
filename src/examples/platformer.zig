@@ -292,10 +292,11 @@ fn collisionCallback(world: *World, event: *phiz.CollisionEvent) void {
 
 fn renderCoinsCollected() void {
     var text_buf: [128]u8 = undefined;
-    const coins_text = std.fmt.bufPrintZ(
+    const coins_text = std.mem.printSentinel(
         &text_buf,
         "Coins collected: {d}",
         .{coins_collected},
+        0,
     ) catch unreachable;
     common.renderTextLine(coins_text, 5);
 }

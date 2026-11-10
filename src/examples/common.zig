@@ -164,7 +164,10 @@ pub fn renderBodyDebug(body: World.Body, index: usize) void {
 
         // Draw collision normal.
         const half_size = body.getAabb().getHalfSize();
-        const direction = m.Vec2{ .data = std.math.sign(body.penetration.data) };
+        const direction = m.Vec2.new(
+            @floatFromInt(std.math.sign(body.penetration.x())),
+            @floatFromInt(std.math.sign(body.penetration.y())),
+        );
         const edge = body_center.add(direction.mul(half_size).negate());
         const normal = edge.add(direction.mul(half_size.scale(0.75)));
         if (normal.x() != 0) {
@@ -185,7 +188,7 @@ pub fn renderBodyDebug(body: World.Body, index: usize) void {
 
     // Draw body index.
     var text_buf: [8]u8 = undefined;
-    const text = std.fmt.bufPrintZ(&text_buf, "{d}", .{index}) catch unreachable;
+    const text = std.mem.printSentinel(&text_buf, "{d}", .{index}, 0) catch unreachable;
     const text_pos = body.position.add(m.Vec2.new(2, 1)).cast(i32);
     rl.drawText(text, text_pos.x(), text_pos.y(), 6, rl.Color.ray_white);
 }
@@ -215,10 +218,11 @@ pub fn renderHud(state: *State) void {
 
     line += 1;
     const bodies_count = state.world.bodies.items.len - state.world.free_body_ids.items.len;
-    const bodies_text = std.fmt.bufPrintZ(
+    const bodies_text = std.mem.printSentinel(
         &text_buf,
         "Bodies: {d}",
         .{bodies_count},
+        0,
     ) catch unreachable;
     renderTextLine(bodies_text, line);
 

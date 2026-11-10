@@ -53,3 +53,31 @@ per-step p95: 2.8863 ms
 per-step p99: 3.0707 ms
 per-step max: 3.9551 ms
 throughput: 570 steps/s
+
+# zig 0.17.1 optimize=Debug
+
+phiz perf harness (headless)
+bodies: 485
+steps: 600 (timestep 1/60 s, 4 substeps)
+total: 7825.76 ms
+per-step mean: 13.0426 ms
+per-step min: 3.2437 ms
+per-step p50: 13.6314 ms
+per-step p95: 19.4504 ms
+per-step p99: 19.7562 ms
+per-step max: 20.4906 ms
+throughput: 77 steps/s
+
+# zig 0.17.1 optimize=ReleaseFast
+
+phiz perf harness (headless)
+bodies: 485
+steps: 600 (timestep 1/60 s, 4 substeps)
+total: 993.94 ms
+per-step mean: 1.6565 ms
+per-step min: 0.1849 ms
+per-step p50: 1.6459 ms
+per-step p95: 2.7943 ms
+per-step p99: 2.8958 ms
+per-step max: 3.2913 ms
+throughput: 604 steps/s
